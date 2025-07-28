@@ -1,5 +1,5 @@
 # Docker Compose for development
-version: '3.8'
+version: "3.8"
 
 services:
   app:
@@ -7,7 +7,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - POSTGRES_CONN_STRING=${POSTGRES_CONN_STRING}
       - FERNET_SECRET=${FERNET_SECRET}
     volumes:

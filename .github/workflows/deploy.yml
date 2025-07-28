@@ -1,0 +1,50 @@
+name: Deploy LLM Backend to VPS via Docker Compose
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build & Deploy via Docker Compose
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v3
+
+      - name: 🆔 Get short commit SHA
+        id: vars
+        run: echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: 🔑 Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: 📤 Copy files to VPS
+        run: |
+          COMMIT_ID=${{ steps.vars.outputs.commit_sha }}
+
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            mkdir -p ~/zoan-llm-backend
+          EOF
+
+          rsync -avz --exclude '.git' --exclude '.github' --exclude '.env' . ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/zoan-llm-backend/
+
+      - name: 🚀 Run docker-compose on VPS
+        run: |
+          COMMIT_ID=${{ steps.vars.outputs.commit_sha }}
+
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << EOF
+            cd ~/zoan-llm-backend
+
+            echo "Using image tag: zoan-llm-backend:${COMMIT_ID}"
+            
+            # Build with tag
+            docker build -t zoan-llm-backend:${COMMIT_ID} .
+
+            # Export IMAGE_TAG to override in compose
+            IMAGE_TAG=${COMMIT_ID} docker compose -f docker-compose.prod.yml up -d --build
+          EOF
