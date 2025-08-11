@@ -7,9 +7,13 @@ from psycopg import Connection
 from config.prompt_template import system_prompt, zoan_system_prompt
 from utils.helper import decrypt_token
 
+from utils.enums import *
+
 class CompletionAction:
+    """Handles completion actions using LangGraph and a Postgres database."""
+    
     def __init__(self):
-        conn_string = os.environ.get("POSTGRES_CONN_STRING")
+        conn_string = os.environ.get(SecretEnum.POSTGRES_CONN_STRING.value)
         conn = Connection.connect(conn_string, autocommit=True)
 
         self.store = PostgresStore(conn)
@@ -42,7 +46,7 @@ class CompletionAction:
         
         api_key = None        
         try:
-            api_key = decrypt_token(model_token, os.environ.get("FERNET_SECRET"))
+            api_key = decrypt_token(model_token, os.environ.get(SecretEnum.FERNET_SECRET.value))
         except Exception as e:
             api_key = None
             
@@ -82,7 +86,10 @@ class CompletionAction:
             },
             "recursion_limit": 100,
         }
-        for chunk, _ in agent_executor.stream(input, config=config, stream_mode="messages"):
-            yield json.dumps(chunk.model_dump(), ensure_ascii=False)
+        try:
+            for chunk, _ in agent_executor.stream(input, config=config, stream_mode="messages"):
+                yield json.dumps(chunk.model_dump(), ensure_ascii=False)
+        except Exception as e:
+            yield json.dumps({"content": str(e)}, ensure_ascii=False)
     
 completion_action = CompletionAction()

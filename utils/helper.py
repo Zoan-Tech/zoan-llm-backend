@@ -14,3 +14,23 @@ def decrypt_token(encrypted_token: str, key: str) -> str:
     """Decrypts an encrypted token using the provided key."""
     f = Fernet(key.encode())
     return f.decrypt(encrypted_token.encode()).decode()
+
+from typing import Any, Dict
+# Builder
+_PY_TYPES = {
+    "str": str, "string": str,
+    "int": int, "integer": int,
+    "float": float, "number": float,
+    "bool": bool, "boolean": bool,
+    "dict": dict, "list": list,
+}
+
+def to_py_type(t: Any) -> type:
+    """
+    Convert a type specification to a Python type.
+    """
+    if isinstance(t, type):
+        return t
+    if isinstance(t, str):
+        return _PY_TYPES.get(t.lower(), str)
+    return str
