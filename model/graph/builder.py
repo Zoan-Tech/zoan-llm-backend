@@ -13,24 +13,27 @@ class ModelKwargs(BaseModel):
     stop: Optional[list[str]] = Field(None, description="List of stop sequences for the model")
 
 class StepModule(BaseModel):
+    id: Optional[str] = Field(None, description="Unique identifier for the step module")
     name: str = Field(..., description="Name of the step module")
     description: Optional[str] = Field(None, description="Description of the step module")
     args: Optional[dict] = Field(None, description="Arguments for the step module")
     response_mapping: Optional[dict] = Field(None, description="Mapping of response fields to step variables")
 
 class AgentWorkflow(BaseModel):
+    id: Optional[str] = Field(None, description="Unique identifier for the agent workflow")
     name: str = Field(..., description="Name of the agent workflow")
     description: Optional[str] = Field(None, description="Description of the agent workflow")
     steps: list[StepModule] = Field(..., description="List of steps in the agent workflow")
 
 class AgentConfig(BaseModel):
+    id: Optional[str] = Field(None, description="Unique identifier for the agent")
     name: str = Field(..., description="Name of the agent")
     model: str = Field(..., description="Model name")
     model_kwargs: ModelKwargs = Field(default_factory=ModelKwargs, description="Additional model configuration")
     api_key: SecretStr = Field(..., description="API key for the model")
 
     description: Optional[str] = Field(None, description="Description of the agent")
-    instructions: Optional[str] = Field(None, description="Instructions for the agent")
+    instruction: Optional[str] = Field(None, description="Instruction for the agent")
 
     workflows: list[AgentWorkflow] = Field(..., description="List of agent workflows")
     

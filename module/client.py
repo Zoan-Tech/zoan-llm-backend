@@ -60,7 +60,7 @@ class ModuleClient:
         Returns:
             dict: Response from the module server.
         """
-        url = f"{self.EXECUTE_MODULE_ENDPOINT}/{module_name}"
+        url = f"{self.EXECUTE_MODULE_ENDPOINT}"
         payload.update({"module_name": module_name})
 
         response = self.client.post(

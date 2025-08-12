@@ -3,16 +3,18 @@ from pydantic import BaseModel, Field, create_model
 from langfuse import Langfuse
 import logging
 
+from langgraph.graph import END, START
+from langgraph.graph.state import StateGraph, CompiledStateGraph
+from langgraph.prebuilt import create_react_agent
+from langchain.chat_models import init_chat_model
+from module.client import ModuleClient
+from langchain_core.tools import StructuredTool
+
 from model import (
     AgentConfig,
     StepModule,
     AgentWorkflow,
 )
-from langgraph.graph import StateGraph, END, START, CompiledStateGraph
-from langgraph.prebuilt import create_react_agent
-from langchain.chat_models import init_chat_model
-from module.client import ModuleClient
-from langchain_core.tools import StructuredTool
 
 from utils.helper import to_py_type
 from utils.exception_handler import (
@@ -89,21 +91,30 @@ class GraphBuilder:
     @graph_builder_exception_handler("Failed to construct module tool")
     def _construct_module_tool(self, workflow_name: str, step_module: StepModule) -> StructuredTool:
         """Construct a module tool with proper error handling."""
-        ArgsSchema = self._build_args_schema_from_step(step_module)
+        try:
+            ArgsSchema = self._build_args_schema_from_step(step_module)
 
-        @api_operation_handler(f"Module execution failed for {step_module.name}")
-        def _run(**kwargs):
-            payload = dict(kwargs)
-            result = self.module_client.execute_module(step_module.name, payload=payload)
-            return self._apply_response_mapping(result, step_module.response_mapping)
+            @api_operation_handler(f"Module execution failed for {step_module.name}")
+            def _run(**kwargs):
+                if step_module.name == "human_input":
+                    return {
+                        "message": "Ask for user's input about: {}".format(step_module.description)
+                    }
+                else:
+                    payload = dict(kwargs)
+                    result = self.module_client.execute_module(step_module.name, payload=payload)
+                    return self._apply_response_mapping(result, step_module.response_mapping)
 
-        return StructuredTool.from_function(
-            name=f"{workflow_name}.{step_module.name}",
-            description=step_module.description or "No description provided",
-            func=_run,
-            args_schema=ArgsSchema,
-            return_direct=False,
-        )
+            return StructuredTool.from_function(
+                name=f"{workflow_name}-{step_module.name}",
+                description=step_module.description or "No description provided",
+                func=_run,
+                args_schema=ArgsSchema,
+                return_direct=False,
+            )
+        except Exception as e:
+            logger.error(f"Error during tool construction for {step_module.name}: {e}")
+            raise
     
     @safe_operation(default_return=[])
     def _construct_agent_toolset(self, workflows: list[AgentWorkflow]) -> list[StructuredTool]:
@@ -125,7 +136,7 @@ class GraphBuilder:
                 try:
                     tool = self._construct_module_tool(workflow.name, step)
                     tools.append(tool)
-                except GraphBuilderError as e:
+                except Exception as e:
                     logger.error(f"Failed to construct tool for step '{step.name}' in workflow '{workflow.name}': {e}")
                     # Continue with other tools rather than failing completely
                     continue
@@ -178,8 +189,8 @@ class GraphBuilder:
         
         compiled_prompt = prompt.compile(
             description=agent_config.description or "No description provided",
-            instruction=agent_config.instructions or "No instructions provided",
-            workflow=self._construct_agent_workflow_prompt(agent_config.workflows)
+            instruction=agent_config.instruction or "No instruction provided",
+            workflows=self._construct_agent_workflow_prompt(agent_config.workflows)
         )
         
         return compiled_prompt
@@ -190,9 +201,6 @@ class GraphBuilder:
         if not agent_config.model:
             raise AgentConfigurationError("Model name is required")
         
-        if not agent_config.workflows:
-            raise AgentConfigurationError("At least one workflow is required")
-            
         # Validate that we can get the API key
         decrypted_key = agent_config.get_decrypted_api_key()
         if not decrypted_key:
@@ -239,7 +247,13 @@ class GraphBuilder:
             raise GraphBuilderError("At least one agent configuration is required")
             
         # Create state graph - you might need to define a proper state schema
-        graph = StateGraph()
+        graph = StateGraph(dict)
+
+        primary_agent_config = agents.pop(0)
+        primary_agent = self.build_agent(primary_agent_config)
+        graph.add_node(primary_agent_config.name, primary_agent)
+        graph.add_edge(START, primary_agent_config.name)
+        graph.add_edge(primary_agent_config.name, END)
         
         successfully_added = []
         
@@ -249,7 +263,7 @@ class GraphBuilder:
                 
                 graph.add_node(agent_config.name, agent)
                 
-                successfully_added.append(agent_config.name)
+                successfully_added.append((agent_config.name, agent))
                 logger.info(f"Successfully added agent '{agent_config.name}' to graph")
                 
             except Exception as e:
@@ -257,24 +271,15 @@ class GraphBuilder:
                 # Continue with other agents rather than failing completely
                 continue
         
-        if not successfully_added:
-            raise GraphBuilderError("No agents were successfully added to the graph")
-        
         # Add proper graph edges based on your workflow logic
-        if successfully_added:
-            # Add edge from START to first agent
-            graph.add_edge(START, successfully_added[0])
-            
+        if len(successfully_added):
             # Add edges between consecutive agents (if that's your intended flow)
-            for i in range(len(successfully_added) - 1):
-                graph.add_edge(successfully_added[i], successfully_added[i + 1])
-            
-            # Add edge from last agent to END
-            graph.add_edge(successfully_added[-1], END)
+            for (agent_name, agent) in successfully_added:
+                graph.add_edge(primary_agent_config.name, agent_name)
+                graph.add_edge(agent_name, END)
 
         return graph.compile(
             checkpointer=self.checkpointer,
             store=self.store,
-            interrupt_before=[END]  # Optional: specify where to interrupt
         )
 

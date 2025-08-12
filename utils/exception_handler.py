@@ -58,7 +58,9 @@ def exception_handler(
             except Exception as e:
                 # Get function context for better logging
                 func_name = func.__name__
-                class_name = getattr(args[0], '__class__', {}).get('__name__', '') if args else ''
+                class_name = ""
+                if args and hasattr(args[0], '__class__'):
+                    class_name = args[0].__class__.__name__
                 context = f"{class_name}.{func_name}" if class_name else func_name
                 
                 # Handle specific exceptions differently if configured
@@ -91,6 +93,8 @@ def exception_handler(
                 # Decide whether to reraise or return default
                 if reraise:
                     if custom_exception:
+                        import traceback
+                        traceback.print_exc()  # Log the traceback for debugging
                         raise custom_exception(error_msg) from e
                     else:
                         raise

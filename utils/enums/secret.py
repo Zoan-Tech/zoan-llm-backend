@@ -1,6 +1,7 @@
 from enum import Enum
 
 class SecretEnum(Enum):
+    OPENAI_SECRET_KEY = "OPENAI_SECRET_KEY"
     POSTGRES_CONN_STRING = "POSTGRES_CONN_STRING"
     FERNET_SECRET = "FERNET_SECRET"
 
