@@ -105,8 +105,10 @@ class GraphBuilder:
                     result = self.module_client.execute_module(step_module.name, payload=payload)
                     return self._apply_response_mapping(result, step_module.response_mapping)
 
+
+            decor_workflow_name = workflow_name.lower().split(" ").join("_"),
             return StructuredTool.from_function(
-                name=f"{workflow_name}-{step_module.name}",
+                name=f"{decor_workflow_name}-{step_module.name}",
                 description=step_module.description or "No description provided",
                 func=_run,
                 args_schema=ArgsSchema,
@@ -140,7 +142,7 @@ class GraphBuilder:
                     logger.error(f"Failed to construct tool for step '{step.name}' in workflow '{workflow.name}': {e}")
                     # Continue with other tools rather than failing completely
                     continue
-                    
+            
         return tools
     
     @safe_operation(default_return="No workflows defined.")
@@ -228,7 +230,7 @@ class GraphBuilder:
         )
 
         # Construct tools
-        tools = self._construct_agent_toolset(agent_config.workflows)
+        tools = self._construct_agent_toolset(agent_config.workflows) 
         if not tools:
             logger.warning("No tools were successfully constructed for the agent")
 

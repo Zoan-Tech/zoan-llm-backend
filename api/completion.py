@@ -4,6 +4,7 @@ from typing import Dict, Any
 
 from model import CompletionRequest
 from action import completion_action
+from model.graph.builder import AgentConfig
 
 router = APIRouter()
 
@@ -17,9 +18,14 @@ async def create_completion_stream(request: CompletionRequest):
     Returns:
         StreamingResponse: A streaming response with the completion data.
     """
-    
     return StreamingResponse(
-        completion_action.create_completion(**request.model_dump()),
+        completion_action.create_completion(
+            user_id=request.user_id,
+            conversation_id=request.conversation_id,
+            message=request.message,
+            agents=request.agents,
+            use_conversation_cache=request.use_conversation_cache
+        ),
         media_type="application/json"
     )
 
