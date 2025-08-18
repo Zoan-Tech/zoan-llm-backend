@@ -14,12 +14,12 @@ class ModelKwargs(BaseModel):
 
 class StepModuleArgs(BaseModel):
     type: str = Field(..., description="Type of the argument")
+    description: Optional[str] = Field(None, description="Description of the argument")
     value: Optional[str] = Field(None, description="Value of the argument")
     required: bool = Field(False, description="Whether the argument is required")
     end_user_input: bool = Field(False, description="Whether this argument requires end-user input", alias="end-user_input")
 
 class StepModule(BaseModel):
-    id: Optional[str] = Field(None, description="Unique identifier for the step module")
     name: str = Field(..., description="Name of the step module")
     type: str = Field(..., description="Type of the step module")
     description: Optional[str] = Field(None, description="Description of the step module")

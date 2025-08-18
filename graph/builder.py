@@ -92,9 +92,8 @@ class GraphBuilder:
         """
         match step_module.type:
             case "human_input":
-                return lambda: {
-                    "message": f"Ask for user's input about: {step_module.args.get("description", "No description provided")}"
-                }
+                return lambda: "{}".format(getattr(step_module.args.get("description", {}), "value", step_module.description))
+
             case "llm_call":
                 def _run(**kwargs):
                     payload = dict(kwargs)
