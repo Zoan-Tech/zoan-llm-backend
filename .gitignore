@@ -396,3 +396,5 @@ tmp/
 *.tmp.*
 *.log
 tmp*
+
+*test*.py
