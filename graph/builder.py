@@ -58,18 +58,15 @@ class GraphBuilder:
             return create_model(f"{step_module.name}Args")  # no-arg tool
 
         fields = {}
-        for arg_name, spec in args_spec.items():
-            if not isinstance(spec, dict):
-                logger.warning(f"Invalid spec for argument '{arg_name}' in step '{step_module.name}'. Expected dict, got {type(spec)}")
-                continue
-                
-            arg_type = to_py_type(spec.get("type", "str"))
-            is_required = spec.get("required", True)
-            description = spec.get("description", "")
+        for arg_name, spec in args_spec.items():                
+            arg_type = to_py_type(getattr(spec, "type", "str"))
+            is_required = getattr(spec, "required", False)
+            description = getattr(spec, "description", None)
+            default_value = getattr(spec, "value", None)
             
             fields[arg_name] = (
                 arg_type,
-                Field(... if is_required else None, description=description)
+                Field(default=... if is_required else default_value, description=description)
             )
         
         return create_model(f"{step_module.name}Args", **fields)
@@ -87,28 +84,35 @@ class GraphBuilder:
             else:
                 logger.warning(f"Source key '{src_key}' not found in response")
         return mapped_response
+    
+    def _construct_module_func(self, step_module: StepModule) -> Any:
+        """
+        Construct a function for the module execution.
+        This is a placeholder for the actual module execution logic.
+        """
+        match step_module.type:
+            case "human_input":
+                return lambda: {
+                    "message": f"Ask for user's input about: {step_module.args.get("description", "No description provided")}"
+                }
+            case "llm_call":
+                def _run(**kwargs):
+                    payload = dict(kwargs)
+                    result = self.module_client.execute_module(step_module.name, payload=payload)
+                    return self._apply_response_mapping(result, step_module.response_mapping)
+                return _run
 
     @graph_builder_exception_handler("Failed to construct module tool")
     def _construct_module_tool(self, workflow_name: str, step_module: StepModule) -> StructuredTool:
         """Construct a module tool with proper error handling."""
         try:
             ArgsSchema = self._build_args_schema_from_step(step_module)
+            _run = self._construct_module_func(step_module)
 
-            @api_operation_handler(f"Module execution failed for {step_module.name}")
-            def _run(**kwargs):
-                if step_module.name == "human_input":
-                    return {
-                        "message": "Ask for user's input about: {}".format(step_module.description)
-                    }
-                else:
-                    payload = dict(kwargs)
-                    result = self.module_client.execute_module(step_module.name, payload=payload)
-                    return self._apply_response_mapping(result, step_module.response_mapping)
-
-
-            decor_workflow_name = workflow_name.lower().split(" ").join("_"),
+            decor_workflow_name = "_".join(workflow_name.lower().split(" "))
+            decor_step_name = "_".join(step_module.name.lower().split(" "))
             return StructuredTool.from_function(
-                name=f"{decor_workflow_name}-{step_module.name}",
+                name=f"{decor_workflow_name}-{decor_step_name}",
                 description=step_module.description or "No description provided",
                 func=_run,
                 args_schema=ArgsSchema,
@@ -142,7 +146,8 @@ class GraphBuilder:
                     logger.error(f"Failed to construct tool for step '{step.name}' in workflow '{workflow.name}': {e}")
                     # Continue with other tools rather than failing completely
                     continue
-            
+        
+        logger.info(f"Constructed tools from workflows: ", tools)    
         return tools
     
     @safe_operation(default_return="No workflows defined.")
@@ -157,7 +162,7 @@ class GraphBuilder:
             if not steps:
                 return "No steps defined"
             return "\n".join(
-                f"- {step.name}: {step.description or 'No description provided'}"
+                f"- {step.name}: {step.description or step.name}"
                 for step in steps
             )
         

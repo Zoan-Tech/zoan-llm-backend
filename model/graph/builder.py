@@ -12,11 +12,18 @@ class ModelKwargs(BaseModel):
     presence_penalty: float = Field(0.0, description="Penalty for presence of tokens")
     stop: Optional[list[str]] = Field(None, description="List of stop sequences for the model")
 
+class StepModuleArgs(BaseModel):
+    type: str = Field(..., description="Type of the argument")
+    value: Optional[str] = Field(None, description="Value of the argument")
+    required: bool = Field(False, description="Whether the argument is required")
+    end_user_input: bool = Field(False, description="Whether this argument requires end-user input", alias="end-user_input")
+
 class StepModule(BaseModel):
     id: Optional[str] = Field(None, description="Unique identifier for the step module")
     name: str = Field(..., description="Name of the step module")
+    type: str = Field(..., description="Type of the step module")
     description: Optional[str] = Field(None, description="Description of the step module")
-    args: Optional[dict] = Field(None, description="Arguments for the step module")
+    args: Optional[dict[str, StepModuleArgs]] = Field(None, description="Arguments for the step module")
     response_mapping: Optional[dict] = Field(None, description="Mapping of response fields to step variables")
 
 class AgentWorkflow(BaseModel):
@@ -28,8 +35,10 @@ class AgentWorkflow(BaseModel):
 class AgentConfig(BaseModel):
     id: Optional[str] = Field(None, description="Unique identifier for the agent")
     name: str = Field(..., description="Name of the agent")
+    
     model: str = Field(..., description="Model name")
     model_kwargs: ModelKwargs = Field(default_factory=ModelKwargs, description="Additional model configuration")
+    
     api_key: SecretStr = Field(..., description="API key for the model")
 
     description: Optional[str] = Field(None, description="Description of the agent")

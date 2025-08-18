@@ -91,10 +91,11 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
                 }
                 
                 for step in workflow.steps:
+                    args = {k: v.model_dump() for k, v in step.args.items()} if step.args else {}
                     step_dict = {
                         'name': step.name,
                         'description': step.description,
-                        'args': step.args,
+                        'args': args,
                         'response_mapping': step.response_mapping
                     }
                     workflow_dict['steps'].append(step_dict)
