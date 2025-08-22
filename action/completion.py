@@ -2,9 +2,8 @@ import os, json
 from typing import Dict, Any
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.store.postgres import PostgresStore
-from langgraph.graph.state import CompiledStateGraph
 from psycopg import Connection
-from langfuse import Langfuse
+from langfuse import Langfuse, observe
 
 from model import AgentConfig
 from graph.builder import GraphBuilder
@@ -58,6 +57,7 @@ class CompletionAction:
         self.store = PostgresStore(conn)
         self.store.setup()
 
+    @observe
     async def create_completion(
         self,
         user_id: str,

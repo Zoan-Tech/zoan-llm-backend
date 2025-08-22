@@ -1,12 +1,14 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any
+import logging
 
 from model import CompletionRequest
 from action import completion_action
-from model.graph.builder import AgentConfig
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 @router.post("/completion/stream")
 async def create_completion_stream(request: CompletionRequest):

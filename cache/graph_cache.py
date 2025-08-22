@@ -1,12 +1,14 @@
 import json
 import hashlib
 import time
+import logging
 from typing import Dict, Any, Tuple, Optional
 from langgraph.graph.state import CompiledStateGraph
 
 from model import AgentConfig
 from .mem_cache import MemCache
 
+logger = logging.getLogger(__name__)
 
 class GraphCache(MemCache[str, CompiledStateGraph]):
     """
@@ -147,18 +149,18 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
             # Check if conversation mapping has expired
             if self._is_expired(conv_timestamp):
                 del self._conversation_agent_cache[conversation_id]
-                print(f"GraphCache: Expired conversation cache removed for: {conversation_id}")
+                logger.info(f"GraphCache: Expired conversation cache removed for: {conversation_id}")
                 return None
             
             # Use base class method to get the compiled graph
             compiled_graph = self.get(config_hash)
             if compiled_graph is not None:
-                print(f"GraphCache: Using cached graph for conversation: {conversation_id}")
+                logger.info(f"GraphCache: Using cached graph for conversation: {conversation_id}")
                 return compiled_graph
             else:
                 # Graph expired or not found, remove conversation mapping
                 del self._conversation_agent_cache[conversation_id]
-                print(f"GraphCache: Expired cached graph, removed conversation mapping")
+                logger.info(f"GraphCache: Expired cached graph, removed conversation mapping")
         
         return None
 
@@ -171,7 +173,7 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
         """
         if conversation_id in self._conversation_agent_cache:
             del self._conversation_agent_cache[conversation_id]
-            print(f"GraphCache: Cleared conversation cache for: {conversation_id}")
+            logger.info(f"GraphCache: Cleared conversation cache for: {conversation_id}")
             return True
         return False
 
@@ -183,7 +185,7 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
         self.clear()
         # Clear conversation cache
         self._conversation_agent_cache.clear()
-        print("GraphCache: Cleared conversation mappings")
+        logger.info("GraphCache: Cleared conversation mappings")
 
     def force_cleanup_expired_cache(self) -> int:
         """
