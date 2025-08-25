@@ -5,6 +5,19 @@ import httpx
 from utils.enums import SecretEnum
 from utils.client_handler import api_error_handler
 
+class ModType:
+    LLM_CALL = "llm_call"
+    HUMAN_INPUT = "human_input"
+    # Add other module types as needed
+
+class ModName:
+    CODE_GENERATION = "code_generation"
+    # Add other module names as needed
+
+mod_mapping = {
+    ModName.CODE_GENERATION: "godot-game-generator",
+}
+
 class ModuleClient:
     EXECUTE_MODULE_ENDPOINT = "admin/plugins/handle-request"
     """
@@ -22,6 +35,7 @@ class ModuleClient:
         host: Optional[str] = None,
         client: Optional[httpx.AsyncClient] = None,
     ):
+        self.MODULE_PREFIX = "builtin-"
         self.api_key = api_key or os.getenv(SecretEnum.MODULE_API_KEY.value)
         self.host = host or os.getenv(SecretEnum.MODULE_HOST.value)
         
@@ -61,11 +75,15 @@ class ModuleClient:
             dict: Response from the module server.
         """
         url = f"{self.EXECUTE_MODULE_ENDPOINT}"
-        payload.update({"module_name": module_name})
+        module_name = self.MODULE_PREFIX + mod_mapping.get(module_name, module_name)
+        json_body = {
+            "module_name": module_name,
+            "payload": payload or {},
+        }
 
         response = self.client.post(
             url,
-            json=payload,
+            json=json_body,
         )
         
         response.raise_for_status()

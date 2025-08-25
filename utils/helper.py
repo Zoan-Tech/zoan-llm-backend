@@ -16,6 +16,7 @@ def decrypt_token(encrypted_token: str, key: str) -> str:
     return f.decrypt(encrypted_token.encode()).decode()
 
 from typing import Any, Dict
+import re
 # Builder
 _PY_TYPES = {
     "str": str, "string": str,
@@ -34,3 +35,19 @@ def to_py_type(t: Any) -> type:
     if isinstance(t, str):
         return _PY_TYPES.get(t.lower(), str)
     return str
+
+def _spec_get(spec: Any, key: str, default: Any = None):
+    # supports both dict-like and attr-like specs
+    if isinstance(spec, dict):
+        return spec.get(key, default)
+    return getattr(spec, key, default)
+
+def _sanitize_name(name: str) -> str:
+    """Sanitize name to match the required pattern ^[^\\s<|\\\\/>]+$"""
+    # Replace spaces and invalid characters with underscores
+    sanitized = re.sub(r'[\s<|\\/>]+', '_', name)
+    # Remove any remaining invalid characters and ensure it's not empty
+    sanitized = re.sub(r'[^\w\-_]', '', sanitized)
+    # Ensure it doesn't start or end with underscore and has content
+    sanitized = sanitized.strip('_')
+    return sanitized if sanitized else 'unnamed_tool'

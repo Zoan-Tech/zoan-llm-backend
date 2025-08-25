@@ -1,5 +1,5 @@
 import os, json
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.store.postgres import PostgresStore
 from psycopg import Connection
@@ -14,7 +14,7 @@ from utils.enums import *
 class CompletionAction:
     """Handles completion actions using LangGraph and a Postgres database."""
 
-    def __init__(self, cache_ttl_seconds: int = None):
+    def __init__(self, cache_ttl_seconds: Optional[int] = None):
         """
         Initialize the CompletionAction with caching support.
         
@@ -57,7 +57,7 @@ class CompletionAction:
         self.store = PostgresStore(conn)
         self.store.setup()
 
-    @observe
+    @observe(as_type="generation")
     async def create_completion(
         self,
         user_id: str,

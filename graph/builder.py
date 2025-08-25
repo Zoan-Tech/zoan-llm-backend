@@ -1,5 +1,4 @@
 from typing import Any, Dict, Optional
-from pydantic import BaseModel, Field, create_model
 from langfuse import Langfuse, observe
 import logging
 
@@ -16,7 +15,8 @@ from model import (
     AgentWorkflow,
 )
 
-from utils.helper import to_py_type
+from graph.tool import ToolBuilder
+
 from utils.exception_handler import (
     GraphBuilderError,
     PromptNotFoundError,
@@ -25,15 +25,9 @@ from utils.exception_handler import (
     safe_operation,
     validation_handler,
 )
+from utils.helper import _sanitize_name
 
 logger = logging.getLogger(__name__)
-
-
-def _spec_get(spec: Any, key: str, default: Any = None):
-    # supports both dict-like and attr-like specs
-    if isinstance(spec, dict):
-        return spec.get(key, default)
-    return getattr(spec, key, default)
 
 class GraphBuilder:
     """
@@ -50,34 +44,10 @@ class GraphBuilder:
         checkpointer: Optional[Any] = None,
         store: Optional[Any] = None
     ):
-        self.module_client = module_client
         self.langfuse_client = langfuse_client
         self.checkpointer = checkpointer
         self.store = store
-
-    @graph_builder_exception_handler("Failed to build args schema")
-    def _build_args_schema_from_step(self, workflow_name: str, step_module: StepModule) -> type[BaseModel]:
-        """
-        Build a Pydantic model for the arguments of a step module.
-        """
-        args_spec = step_module.args or {}
-        model_name = f"{workflow_name}_{step_module.name}_Args".replace(" ", "_")
-        
-        if not args_spec:
-            return create_model(model_name)  # no-arg tool
-
-        fields: Dict[str, tuple] = {}
-        for arg_name, spec in args_spec.items():
-            py_type = to_py_type(_spec_get(spec, "type", "str"))
-            required = bool(_spec_get(spec, "required", False))
-            desc = _spec_get(spec, "description", None)
-            default_val = _spec_get(spec, "value", None)
-            
-            default = ... if required else default_val
-
-            fields[arg_name] = (py_type, Field(default=default, description=desc))
-        
-        return create_model(model_name, **fields)
+        self.tool_builder = ToolBuilder(module_client)
     
     @safe_operation(default_return={})
     def _apply_response_mapping(self, raw: Dict[str, Any], mapping: Optional[Dict[str, str]]) -> Dict[str, Any]:
@@ -91,57 +61,6 @@ class GraphBuilder:
             else:
                 logger.warning(f"Source key '{src_key}' not found in response")
         return out
-    
-    
-    def _construct_module_func(self, step_module: StepModule) -> Any:
-        """
-        Construct a function for the module execution.
-        """
-        mod_type = (step_module.type or "").lower()
-
-        if mod_type == "human_input":
-            # No-arg function that returns a prompt/description
-            @observe(name=f"human_input_{step_module.name}")
-            def _run() -> str:
-                # Prefer 'description' from args.value if present, else step_module.description
-                desc_spec = (step_module.args or {}).get("description") if isinstance(step_module.args, dict) else None
-                arg_desc = (desc_spec or {}).get("value") if isinstance(desc_spec, dict) else None
-                return str(arg_desc or step_module.description or "Human input required.")
-            return _run
-
-        if mod_type == "llm_call":
-            @observe(name=f"llm_call_{step_module.name}")
-            def _run(**kwargs):
-                payload = dict(kwargs)
-                result = self.module_client.execute_module(step_module.name, payload=payload)
-                return self._apply_response_mapping(result, step_module.response_mapping)
-            return _run
-
-        # You can add more types here: http_call, tool_call, python_callable, etc.
-        raise ValueError(f"Unsupported step module type: {step_module.type!r}")
-            
-    @observe(name="construct_module_tool")
-    @graph_builder_exception_handler("Failed to construct module tool")
-    def _construct_module_tool(self, workflow_name: str, step_module: StepModule) -> StructuredTool:
-        """Construct a module tool with proper error handling."""
-        try:
-            ArgsSchema = self._build_args_schema_from_step(workflow_name, step_module)
-            _run = self._construct_module_func(step_module)
-
-            decor_workflow_name = "_".join(workflow_name.lower().split(" "))
-            decor_step_name = "_".join(step_module.name.lower().split(" "))
-
-            return StructuredTool.from_function(
-                name=f"{decor_workflow_name}-{decor_step_name}",
-                description=step_module.description or "No description provided",
-                func=_run,
-                args_schema=ArgsSchema,
-                return_direct=False,
-                # infer_schema=False,  # uncomment if you hit inference shenanigans
-            )
-        except Exception as e:
-            logger.error(f"Error during tool construction for {step_module.name}: {e}")
-            raise
     
     @observe(name="construct_agent_toolset")
     @safe_operation(default_return=[])
@@ -162,14 +81,12 @@ class GraphBuilder:
                 
             for step in workflow.steps:
                 try:
-                    tool = self._construct_module_tool(workflow.name, step)
+                    tool = self.tool_builder._construct_tool(workflow.name, step)
                     tools.append(tool)
                 except Exception as e:
                     logger.error(f"Failed to construct tool for step '{step.name}' in workflow '{workflow.name}': {e}")
                     # Continue with other tools rather than failing completely
                     continue
-        
-        logger.info(f"Constructed tools from workflows: ", tools)    
         return tools
     
     @safe_operation(default_return="No workflows defined.")
@@ -283,7 +200,7 @@ class GraphBuilder:
         prompt = self._get_agent_construction_prompt(agent_config)
 
         # Create the react agent
-        return create_react_agent(llm, tools=tools, prompt=prompt, name=agent_config.name)
+        return create_react_agent(llm, tools=tools, prompt=prompt, name=_sanitize_name(agent_config.name.lower()))
 
     @observe(name="build_graph")
     @graph_builder_exception_handler("Failed to build state graph")
