@@ -4,7 +4,7 @@ import logging
 
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
-from langgraph_supervisor import create_supervisor
+from langgraph_supervisor import create_supervisor, create_handoff_tool
 from langchain.chat_models import init_chat_model
 from module.client import ModuleClient
 from langchain_core.tools import StructuredTool
@@ -214,6 +214,7 @@ class GraphBuilder:
         primary_agent_config = agents.pop(0)
         primary_llm = self._construct_llm(primary_agent_config)
         primary_prompt = self._get_agent_construction_prompt(primary_agent_config, is_primary=True)
+        primary_tools = []
 
         successfully_added = []
         
@@ -221,6 +222,13 @@ class GraphBuilder:
             try:
                 agent = self.build_agent(agent_config)
                 successfully_added.append(agent)
+                primary_tools.append(
+                    create_handoff_tool(
+                        agent_name=_sanitize_name(agent_config.name.lower()),
+                        name=f"handoff_to_{_sanitize_name(agent_config.name.lower())}",
+                        description=f"Hand off to agent {_sanitize_name(agent_config.name.lower())}",
+                    )
+                )
 
                 logger.info(f"Successfully added agent '{agent_config.name}' to graph")
                 
@@ -231,6 +239,7 @@ class GraphBuilder:
 
         primary_agent = create_supervisor(
             agents=successfully_added,
+            tools=primary_tools,
             model=primary_llm,
             prompt=primary_prompt,
         )
