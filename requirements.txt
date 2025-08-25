@@ -14,3 +14,5 @@ langchain-google-genai==2.1.8
 langchain-deepseek==0.1.4
 langgraph-checkpoint-postgres==2.0.23
 psycopg[binary,pool]==3.2.9
+langfuse==3.2.7
+langgraph-supervisor==0.0.29
