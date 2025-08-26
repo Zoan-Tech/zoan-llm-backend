@@ -13,6 +13,6 @@ class CompletionRequest(BaseModel):
     )
     
     use_conversation_cache: bool = Field(
-        default=True,
+        default=False,
         description="Whether to use conversation-based caching for compiled graphs"
     )

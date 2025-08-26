@@ -2,7 +2,7 @@ cryptography==45.0.5
 fastapi==0.116.1
 langchain==0.3.27
 langchain-core==0.3.72
-langgraph==0.5.4
+langgraph==0.6.6
 psycopg==3.2.9
 pydantic==2.11.7
 python-dotenv==1.1.1
