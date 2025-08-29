@@ -2,7 +2,9 @@
 version: "3.8"
 
 services:
-  zoan-llm-backend:
+  app:
+    container_name: zoan-llm-backend
+    image: zoan-llm-backend:${IMAGE_TAG}
     build: .
     ports:
       - "8000:8000"
