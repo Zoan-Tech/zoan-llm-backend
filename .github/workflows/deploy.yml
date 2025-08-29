@@ -42,4 +42,4 @@ jobs:
             docker rm zoan-llm-backend || true
 
             echo "Running new container..."
-            docker run -d --name zoan-llm-backend -p 8000:8000 zoan-llm-backend:${COMMIT_ID}
+            IMAGE_TAG=${COMMIT_ID} docker compose up -d --build
