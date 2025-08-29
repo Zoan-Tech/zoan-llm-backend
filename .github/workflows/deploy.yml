@@ -1,4 +1,4 @@
-name: Deploy LLM Backend to VPS via Docker Compose
+name: Deploy to VPS with Git Commit Tag
 
 on:
   push:
@@ -7,44 +7,39 @@ on:
 
 jobs:
   deploy:
-    name: Build & Deploy via Docker Compose
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v3
-
-      - name: 🆔 Get short commit SHA
+      - name: Get short commit SHA
         id: vars
-        run: echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: 🔑 Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: 📤 Copy files to VPS
-        run: |
-          COMMIT_ID=${{ steps.vars.outputs.commit_sha }}
-
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-            mkdir -p ~/zoan-llm-backend
-          EOF
-
-          rsync -avz --exclude '.git' --exclude '.github' --exclude '.env' . ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/zoan-llm-backend/
-
-      - name: 🚀 Run docker-compose on VPS
-        run: |
-          COMMIT_ID=${{ steps.vars.outputs.commit_sha }}
-
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << EOF
+      - name: 🚀 Pull latest code & build/run Docker on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
             cd ~/zoan-llm-backend
 
-            echo "Using image tag: zoan-llm-backend:${COMMIT_ID}"
-            
-            # Build with tag
-            docker build -t zoan-llm-backend:${COMMIT_ID} .
+            echo "Fetching latest changes..."
+            git fetch origin main
+            git reset --hard origin/main
 
-            # Export IMAGE_TAG to override in compose
-            IMAGE_TAG=${COMMIT_ID} docker compose -f docker-compose.prod.yml up -d --build
-          EOF
+            COMMIT_ID=$(git rev-parse --short HEAD)
+            echo "Building Docker image with tag: zoan-llm-backend:${COMMIT_ID}"
+            docker build --no-cache -t zoan-llm-backend:${COMMIT_ID} .
+
+            echo "Stopping previous container..."
+            docker stop zoan-llm-backend || true
+            docker rm zoan-llm-backend || true
+
+            echo "Running new container..."
+            docker run -d --name zoan-llm-backend -p 8000:8000 zoan-llm-backend:${COMMIT_ID}
