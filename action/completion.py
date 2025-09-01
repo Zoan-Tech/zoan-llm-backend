@@ -80,7 +80,6 @@ class CompletionAction:
         :param use_conversation_cache: Whether to use conversation-based caching.
         :return: The response from the chat model.
         """
-        print(f"Agents: {agents}")
         compiled_graph = None
         
         # Strategy 1: Try to get cached graph for this specific conversation
@@ -124,8 +123,8 @@ class CompletionAction:
         }
         
         try:
-            for chunk, _ in compiled_graph.stream(input, config=config, stream_mode="messages"):
-                yield json.dumps(chunk.model_dump(), ensure_ascii=False)
+            for agent, chunk in compiled_graph.stream(input, config=config, stream_mode="messages", subgraphs=True):
+                yield json.dumps(chunk[0].model_dump(), ensure_ascii=False)
         except Exception as e:
             yield json.dumps({"content": str(e)}, ensure_ascii=False)
 
