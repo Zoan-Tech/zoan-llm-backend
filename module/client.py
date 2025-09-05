@@ -15,7 +15,7 @@ class ModName:
     # Add other module names as needed
 
 mod_mapping = {
-    ModName.CODE_GENERATION: "godot-game-generator",
+    ModName.CODE_GENERATION: "js-game-generator",
 }
 
 class ModuleClient:
@@ -55,7 +55,7 @@ class ModuleClient:
             self.client = httpx.Client(
                 base_url=self.host,
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                timeout=httpx.Timeout(10.0, connect=5.0)
+                timeout=httpx.Timeout(120.0, connect=5.0)
             )
     
     @api_error_handler
@@ -88,5 +88,3 @@ class ModuleClient:
         
         response.raise_for_status()
         return response.json()
-
-        

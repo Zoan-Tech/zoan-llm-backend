@@ -82,11 +82,13 @@ class GraphBuilder:
             for step in workflow.steps:
                 try:
                     tool = self.tool_builder._construct_tool(workflow.name, step)
-                    tools.append(tool)
+                    if tool:
+                        tools.append(tool)
                 except Exception as e:
                     logger.error(f"Failed to construct tool for step '{step.name}' in workflow '{workflow.name}': {e}")
                     # Continue with other tools rather than failing completely
                     continue
+    
         return tools
     
     @safe_operation(default_return="No workflows defined.")
@@ -137,7 +139,7 @@ class GraphBuilder:
             prompt = self.langfuse_client.get_prompt(self.PROMPT_PRIMARY_AGENT_CONSTRUCTION)
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
-            compiled_prompt = prompt.compile(prompt=agent_config.instruction or "No instruction provided")
+            compiled_prompt = prompt.compile()
             return compiled_prompt
         else:
             prompt = self.langfuse_client.get_prompt(self.PROMPT_AGENT_CONSTRUCTION)
@@ -214,7 +216,7 @@ class GraphBuilder:
         primary_agent_config = agents.pop(0)
         primary_llm = self._construct_llm(primary_agent_config)
         primary_prompt = self._get_agent_construction_prompt(primary_agent_config, is_primary=True)
-        primary_tools = []
+        primary_tools = None
 
         successfully_added = []
         
@@ -222,13 +224,13 @@ class GraphBuilder:
             try:
                 agent = self.build_agent(agent_config)
                 successfully_added.append(agent)
-                primary_tools.append(
-                    create_handoff_tool(
-                        agent_name=_sanitize_name(agent_config.name.lower()),
-                        name=f"handoff_to_{_sanitize_name(agent_config.name.lower())}",
-                        description=f"Hand off to agent {_sanitize_name(agent_config.name.lower())}",
-                    )
-                )
+                # primary_tools.append(
+                #     create_handoff_tool(
+                #         agent_name=_sanitize_name(agent_config.name.lower()),
+                #         name=f"handoff_to_{_sanitize_name(agent_config.name.lower())}",
+                #         description=f"Hand off to agent {_sanitize_name(agent_config.name.lower())}",
+                #     )
+                # )
 
                 logger.info(f"Successfully added agent '{agent_config.name}' to graph")
                 

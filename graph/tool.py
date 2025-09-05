@@ -105,14 +105,15 @@ class ToolBuilder:
         )
 
     @observe(name="construct_module_tool")
-    def _construct_tool(self, workflow_name: str, step_module: StepModule) -> StructuredTool:
+    def _construct_tool(self, workflow_name: str, step_module: StepModule) -> Optional[StructuredTool]:
         """Construct a module tool with proper error handling."""
         try:
             mod_type = (step_module.type or "").lower()
 
-            if mod_type == ModType.HUMAN_INPUT:
-                return self._build_human_input_tool(workflow_name, step_module)
-            else:
+            # if mod_type == ModType.HUMAN_INPUT:
+            #     return self._build_human_input_tool(workflow_name, step_module)
+            # else:
+            if mod_type != ModType.HUMAN_INPUT:
                 return self._build_module_tool(workflow_name, step_module)
         except Exception as e:
             logger.error(f"Error during tool construction for {step_module.name}: {e}")
