@@ -113,7 +113,7 @@ class MinioGameBuilder:
     
     async def build_openai_game_file(self, container_id: str, thread_id: str) -> None:
         """Build game files from OpenAI container"""
-        logger.info(f"{logger_prefix} Building game files for thread {thread_id}")
+        logger.info(f"{logger_prefix} Building game files for thread {thread_id} - {container_id}")
         try:
             zip_file_ids = await self._get_container_zip_files(container_id)
             if not zip_file_ids:
