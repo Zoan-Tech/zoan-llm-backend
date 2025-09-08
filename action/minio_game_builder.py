@@ -75,28 +75,53 @@ class MinioGameBuilder:
         with zipfile.ZipFile(BytesIO(zip_content), 'r') as zip_ref:
             zip_ref.extractall(extract_path)
     
-    async def build_openai_game_file(self, container_id: str, extract_path: str, thread_id: str) -> None:
+    async def _extract_and_upload_to_minio(self, zip_content: bytes, prefix: str) -> None:
+        """Extract zip content and upload individual files directly to MinIO"""
+        logger.info(f"{logger_prefix} Extracting and uploading zip contents to MinIO")
+        try:
+            import mimetypes
+            
+            with zipfile.ZipFile(BytesIO(zip_content), 'r') as zip_ref:
+                for file_info in zip_ref.infolist():
+                    if not file_info.is_dir():
+                        # Read file content from zip
+                        file_content = zip_ref.read(file_info.filename)
+                        
+                        # Create object name with prefix
+                        object_name = f"{prefix}/{file_info.filename}".replace("\\", "/")
+                        
+                        # Determine MIME type
+                        content_type, _ = mimetypes.guess_type(file_info.filename)
+                        if content_type is None:
+                            content_type = "application/octet-stream"
+                        
+                        # Upload file content directly to MinIO
+                        file_stream = BytesIO(file_content)
+                        self.minio_service.client.put_object(
+                            self.minio_service.config.bucket,
+                            object_name,
+                            file_stream,
+                            length=len(file_content),
+                            content_type=content_type,
+                            metadata={
+                                "Content-Disposition": 'inline'
+                            }
+                        )
+        except Exception as e:
+            logger.error(f"{logger_prefix} Failed to extract and upload zip to MinIO: {e}")
+            raise
+    
+    async def build_openai_game_file(self, container_id: str, thread_id: str) -> None:
         """Build game files from OpenAI container"""
         logger.info(f"{logger_prefix} Building game files for thread {thread_id}")
         try:
             zip_file_ids = await self._get_container_zip_files(container_id)
             if not zip_file_ids:
-                return
+                raise Exception(f"No zip files found in container {container_id}")
 
             for file_id in zip_file_ids:
                 zip_content = await self._download_file_from_openai(container_id, file_id)
-                self._unzip_to_directory(zip_content, extract_path)
-            
-            # Upload unzipped files to MinIO if available
-            if self.minio_available and self.minio_service:
-                upload_result = await self.minio_service.upload_folder_with_prefix(extract_path, prefix=thread_id)
-                # Remove local folder after successful upload
-                try:
-                    shutil.rmtree(extract_path)
-                except Exception as cleanup_error:
-                    logger.error(f"{logger_prefix} Failed to remove local folder {extract_path}: {cleanup_error}")
-            else:
-                logger.info(f"{logger_prefix} MinIO service not available, files saved locally only")
+                await self._extract_and_upload_to_minio(zip_content, thread_id)
                         
         except Exception as e:
             logger.error(f"{logger_prefix} Error building game files from container {container_id}: {e}")
