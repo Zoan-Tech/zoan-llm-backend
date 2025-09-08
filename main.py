@@ -1,16 +1,5 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.exceptions import RequestValidationError
-from uvicorn.config import LOGGING_CONFIG
 import logging
 import os
-
-from api import (
-    health_check,
-    completion
-)
-
-from api.utils import custom_http_exception_handler, validation_exception_handler
-
 # Configure application logging
 def setup_logging():
     """Setup logging configuration for the application"""
@@ -30,6 +19,17 @@ def setup_logging():
     logging.getLogger("minio").setLevel(logging.WARNING)
 
 setup_logging()
+
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
+from uvicorn.config import LOGGING_CONFIG
+
+from api import (
+    health_check,
+    completion
+)
+
+from api.utils import custom_http_exception_handler, validation_exception_handler
 
 app = FastAPI()
 
