@@ -11,3 +11,5 @@ class SecretEnum(Enum):
     
     MODULE_HOST = "MODULE_HOST"
     MODULE_API_KEY = "MODULE_API_KEY"
+    
+    OPENAI_API_KEY = "OPENAI_API_KEY"

@@ -8,8 +8,8 @@ class ModelKwargs(BaseModel):
     temperature: Optional[float] = Field(None, description="Sampling temperature for the model")
     max_tokens: Optional[int] = Field(None, description="Maximum number of tokens to generate")
     top_p: Optional[float] = Field(None, description="Nucleus sampling parameter")
-    frequency_penalty: float = Field(0.0, description="Penalty for frequency of tokens")
-    presence_penalty: float = Field(0.0, description="Penalty for presence of tokens")
+    # frequency_penalty: float = Field(0.0, description="Penalty for frequency of tokens")
+    # presence_penalty: float = Field(0.0, description="Penalty for presence of tokens")
     stop: Optional[list[str]] = Field(None, description="List of stop sequences for the model")
 
 class StepModuleArgs(BaseModel):
