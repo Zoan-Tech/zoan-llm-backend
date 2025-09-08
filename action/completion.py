@@ -158,8 +158,6 @@ class CompletionAction:
             for agent, chunk in compiled_graph.stream(input, config=config, stream_mode="messages", subgraphs=True):                    
                 # Post-process chunk content to extract container ID if present
                 self._postprocess_chunk_content(agent, chunk[0], annotation)
-                with open("debug.log", "a") as f:
-                    f.write(f"{chunk}\n")
                 yield json.dumps(chunk[0].model_dump(), ensure_ascii=False)
                 
         except Exception as e:
