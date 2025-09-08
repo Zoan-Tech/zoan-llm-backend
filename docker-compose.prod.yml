@@ -13,6 +13,9 @@ services:
     environment:
       - POSTGRES_CONN_STRING=${POSTGRES_CONN_STRING}
       - FERNET_SECRET=${FERNET_SECRET}
+    volumes:
+      - .:/app
+      - ./games:/app/games
     restart: unless-stopped
     mem_limit: 2g
     cpus: 1.0

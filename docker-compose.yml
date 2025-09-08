@@ -15,6 +15,7 @@ services:
       - FERNET_SECRET=${FERNET_SECRET}
     volumes:
       - .:/app
+      - ./games:/app/games
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - zoan-network
