@@ -84,13 +84,6 @@ class CompletionAction:
                     message.update({
                         "agent": agent
                     })
-        elif type(chunk.content) == str:
-            content = chunk.content
-            chunk.content = [{
-                "type": "text",
-                "text": content,
-                "agent": agent
-            }]
 
     @observe(as_type="generation")
     async def create_completion(
