@@ -181,7 +181,6 @@ class CompletionAction:
             try:
                 await self.minio_builder.build_openai_game_file(
                     container_id, 
-                    extract_path=f"./games/{conversation_id}",
                     thread_id=conversation_id
                 )
             except Exception as e:
