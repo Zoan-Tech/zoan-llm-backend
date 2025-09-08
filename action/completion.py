@@ -183,6 +183,16 @@ class CompletionAction:
                     container_id, 
                     thread_id=conversation_id
                 )
+                game_built_object = [{
+                    "type": "game-signal",
+                    "text": "success",
+                    "agent": "",
+                    "url": f"builds/{conversation_id}/index.html"
+                }]
+                yield json.dumps({
+                    "type": "game-built",
+                    "content": game_built_object
+                }, ensure_ascii=False)
             except Exception as e:
                 logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
                 # Don't re-raise here as the main stream has already completed
