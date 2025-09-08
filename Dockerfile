@@ -32,6 +32,10 @@ RUN adduser --disabled-password --gecos '' appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
+# Create necessary directories
+RUN mkdir -p /app/games
+RUN chown -R nextjs:nodejs /app/games
+
 # Expose port
 EXPOSE 8000
 
