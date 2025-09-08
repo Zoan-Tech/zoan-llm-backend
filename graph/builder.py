@@ -4,7 +4,7 @@ import logging
 
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
-from langgraph_supervisor import create_supervisor, create_handoff_tool
+from langgraph_supervisor import create_supervisor
 from langchain.chat_models import init_chat_model
 from module.client import ModuleClient
 from langchain_core.tools import StructuredTool
@@ -36,6 +36,8 @@ class GraphBuilder:
     """
     PROMPT_AGENT_CONSTRUCTION = "Agent Construction"
     PROMPT_PRIMARY_AGENT_CONSTRUCTION = "Primary Agent Construction"
+    PROMPT_GAME_GENERATOR_CONSTRUCTION = "Game Generator"
+    GAME_GENERATOR = "Game Generator"
 
     def __init__(
         self,
@@ -141,6 +143,13 @@ class GraphBuilder:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
             compiled_prompt = prompt.compile()
             return compiled_prompt
+        elif agent_config.name == self.GAME_GENERATOR:
+            prompt = self.langfuse_client.get_prompt(self.PROMPT_GAME_GENERATOR_CONSTRUCTION)
+            if not prompt:
+                raise PromptNotFoundError(f"Prompt '{self.PROMPT_GAME_GENERATOR_CONSTRUCTION}' not found in Langfuse.")
+            
+            compiled_prompt = prompt.compile()
+            return compiled_prompt
         else:
             prompt = self.langfuse_client.get_prompt(self.PROMPT_AGENT_CONSTRUCTION)
             if not prompt:
@@ -174,10 +183,13 @@ class GraphBuilder:
         """
         Initialize the chat model based on the agent configuration.
         """
+        model = "gpt-4.1" if agent_config.name == self.GAME_GENERATOR else agent_config.model
         return init_chat_model(
-            model=agent_config.model,
+            model=model,
+            use_responses_api=True,
             stream_usage=agent_config.stream_usage,
             api_key=agent_config.get_decrypted_api_key(),
+            timeout=120,
             **agent_config.model_kwargs.model_dump(exclude_none=True)
         )
 
@@ -194,7 +206,12 @@ class GraphBuilder:
         llm = self._construct_llm(agent_config)
 
         # Construct tools
-        tools = self._construct_agent_toolset(agent_config.workflows) 
+        tools = self._construct_agent_toolset(agent_config.workflows) if agent_config.name != self.GAME_GENERATOR else [
+            {
+                "type": "code_interpreter",
+                "container": {"type": "auto"},
+            }
+        ]
         if not tools:
             logger.warning("No tools were successfully constructed for the agent")
 
@@ -241,6 +258,7 @@ class GraphBuilder:
 
         primary_agent = create_supervisor(
             agents=successfully_added,
+            output_mode="full_history",
             tools=primary_tools,
             model=primary_llm,
             prompt=primary_prompt,

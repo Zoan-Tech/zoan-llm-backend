@@ -12,6 +12,7 @@ from graph.builder import GraphBuilder
 from module.client import ModuleClient
 from cache import GraphCache
 from utils.enums import *
+from action.minio_game_builder import MinioGameBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,8 @@ class CompletionAction:
         self._setup_graph_builder()
         # Initialize the graph cache
         self.graph_cache = GraphCache(ttl_seconds=cache_ttl_seconds)
-
+        self.minio_builder = MinioGameBuilder()
+        
     def _setup_graph_builder(self):
         """
         Setup the GraphBuilder with necessary clients and configurations.
@@ -60,6 +62,35 @@ class CompletionAction:
         # Store
         self.store = PostgresStore(conn)
         self.store.setup()
+        
+    def _postprocess_chunk_content(self, agent, chunk, annotation):
+        """
+        Post-process chunk content to extract container ID if present.
+        
+        :param agent: The agent instance.
+        :param chunk: The chunk of data to process.
+        :param annotation: Dictionary to store annotation data (modified in-place).
+        :return: Processed chunk with container ID if found.
+        """
+        if type(chunk.content) == list and len(chunk.content) > 0:
+            for message in chunk.content:
+                if "annotations" in message:
+                    annotations = message["annotations"]
+                    for ann in annotations:
+                        if "container_id" in ann:
+                            annotation.update(ann)  # Update the dictionary in-place
+                            
+                elif "text" in message:
+                    message.update({
+                        "agent": agent
+                    })
+        elif type(chunk.content) == str:
+            content = chunk.content
+            chunk.content = [{
+                "type": "text",
+                "text": content,
+                "agent": agent
+            }]
 
     @observe(as_type="generation")
     async def create_completion(
@@ -110,7 +141,7 @@ class CompletionAction:
 
         input = {
             "messages": [
-                ("user", f"Answer this question: {message}")
+                ("user", f"Process this question: {message}")
             ]
         }
 
@@ -121,12 +152,42 @@ class CompletionAction:
             },
             "recursion_limit": 100,
         }
+        annotation = {}
         
         try:
-            for agent, chunk in compiled_graph.stream(input, config=config, stream_mode="messages", subgraphs=True):
+            for agent, chunk in compiled_graph.stream(input, config=config, stream_mode="messages", subgraphs=True):                    
+                # Post-process chunk content to extract container ID if present
+                self._postprocess_chunk_content(agent, chunk[0], annotation)
+                with open("debug.log", "a") as f:
+                    f.write(f"{chunk}\n")
                 yield json.dumps(chunk[0].model_dump(), ensure_ascii=False)
+                
         except Exception as e:
-            yield json.dumps({"content": str(e)}, ensure_ascii=False)
+            logger.error(f"Error during graph streaming: {str(e)}")
+            error_object = {
+                "type": "error",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Error during processing: {str(e)}",
+                        "agent": "supervisor"
+                    }
+                ]
+            }
+            yield json.dumps(error_object, ensure_ascii=False)
+        
+        # Build game files only if we have a valid container ID and no exception occurred
+        container_id = annotation.get("container_id")
+        if container_id:
+            try:
+                await self.minio_builder.build_openai_game_file(
+                    container_id, 
+                    extract_path=f"./games/{conversation_id}",
+                    thread_id=conversation_id
+                )
+            except Exception as e:
+                logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
+                # Don't re-raise here as the main stream has already completed
 
     def clear_conversation_cache(self, conversation_id: str) -> bool:
         """

@@ -398,3 +398,5 @@ tmp/
 tmp*
 
 *test*.py
+
+games/
