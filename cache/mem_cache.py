@@ -1,6 +1,9 @@
 import time
-from typing import Dict, Any, Tuple, Optional, Callable, TypeVar, Generic
+from typing import Dict, Any, Tuple, Optional, TypeVar, Generic
 from abc import ABC, abstractmethod
+from config.logging import get_logger
+
+logger = get_logger()
 
 T = TypeVar('T')  # Type variable for cached items
 K = TypeVar('K')  # Type variable for cache keys
@@ -56,7 +59,7 @@ class MemCache(Generic[K, T], ABC):
             del self._cache[key]
         
         if removed_count > 0:
-            print(f"{self.cache_name}: Cleaned up {removed_count} expired cache entries")
+            logger.info(f"[MemCache] Cleaned up {removed_count} expired cache entries")
         
         return removed_count
 
@@ -97,15 +100,12 @@ class MemCache(Generic[K, T], ABC):
         if cache_key in self._cache:
             cached_item, timestamp = self._cache[cache_key]
             if not self._is_expired(timestamp):
-                print(f"{self.cache_name}: Cache hit for key: {cache_key}")
                 return cached_item
             else:
                 # Remove expired entry
                 del self._cache[cache_key]
-                print(f"{self.cache_name}: Expired entry removed for key: {cache_key}")
         
         # Create new item and cache it
-        print(f"{self.cache_name}: Cache miss, creating new item for key: {cache_key}")
         new_item = self._create_item(*args, **kwargs)
         self._cache[cache_key] = (new_item, current_time)
         

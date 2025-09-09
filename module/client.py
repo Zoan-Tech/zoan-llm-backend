@@ -18,6 +18,9 @@ mod_mapping = {
     ModName.CODE_GENERATION: "js-game-generator",
 }
 
+DEFAULT_MODULE_HOST = os.getenv(SecretEnum.MODULE_HOST.value)
+DEFAULT_MODULE_API_KEY = os.getenv(SecretEnum.MODULE_API_KEY.value)
+
 class ModuleClient:
     EXECUTE_MODULE_ENDPOINT = "admin/plugins/handle-request"
     """
@@ -31,19 +34,13 @@ class ModuleClient:
     """
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        host: Optional[str] = None,
+        host: str = DEFAULT_MODULE_HOST,
+        api_key: str = DEFAULT_MODULE_API_KEY,
         client: Optional[httpx.AsyncClient] = None,
     ):
         self.MODULE_PREFIX = "builtin-"
-        self.api_key = api_key or os.getenv(SecretEnum.MODULE_API_KEY.value)
-        self.host = host or os.getenv(SecretEnum.MODULE_HOST.value)
-        
-        if not self.host:
-            raise ValueError("Module host is not set. Please provide a valid host URL.")
-        
-        if not self.api_key:
-            raise ValueError("Module API key is not set. Please provide a valid API key.")
+        self.api_key = api_key
+        self.host = host
 
         if client is not None:
             self.client = client
@@ -88,3 +85,5 @@ class ModuleClient:
         
         response.raise_for_status()
         return response.json()
+    
+DEFAULT_MODULE_CLIENT = ModuleClient()
