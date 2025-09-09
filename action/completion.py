@@ -92,6 +92,8 @@ class CompletionAction:
                     key=conversation_id, 
                     value=chunk[0].model_dump()
                 )
+                # Flush immediately for streaming to ensure low latency
+                self.kafka_client.flush(timeout=0.1)
                 # yield json.dumps(chunk[0].model_dump(), ensure_ascii=False)
                 
         except Exception as e:

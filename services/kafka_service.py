@@ -29,8 +29,12 @@ class KafkaClient:
         pconf = {
             "bootstrap.servers": bootstrap_servers or os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
             "enable.idempotence": True,          # safe/ordered produce
-            "linger.ms": 0,
+            "linger.ms": 5,                      # Small batch delay for better throughput
+            "batch.size": 16384,                 # 16KB batch size
             "compression.type": "lz4",
+            "acks": "all",                       # Must be 'all' when idempotence is enabled
+            "retries": 3,                        # Retry failed sends
+            "delivery.timeout.ms": 30000,        # 30 second timeout
         }
         if extra_producer_conf:
             pconf.update(extra_producer_conf)
@@ -43,6 +47,10 @@ class KafkaClient:
             "enable.auto.commit": enable_auto_commit,
             "enable.auto.offset.store": enable_auto_offset_store,
             "max.poll.interval.ms": 300000,
+            "session.timeout.ms": 30000,         # Faster session timeout
+            "heartbeat.interval.ms": 10000,      # More frequent heartbeats
+            "fetch.min.bytes": 1,                # Don't wait for large batches
+            "fetch.wait.max.ms": 100,            # Small wait time for low latency
         }
 
         if extra_consumer_conf:
@@ -58,6 +66,7 @@ class KafkaClient:
     def _delivery_report(self, err, msg):
         if err is not None:
             logger.error(f"[KafkaClient] Delivery failed: {err} | topic={msg.topic()} partition={msg.partition()}")
+            # Could implement retry logic here or dead letter queue
         else:
             logger.debug(
                 "[KafkaClient] Delivered to %s [%d] @ %d",
@@ -81,11 +90,31 @@ class KafkaClient:
             headers=[(k, v.encode("utf-8")) for k, v in (headers or {}).items()],
             callback=self._delivery_report,
         )
-        # Poll to serve delivery callbacks
+        # Poll to serve delivery callbacks - non-blocking
         self.producer.poll(0)
 
     def flush(self, timeout: float = 10.0):
-        self.producer.flush(timeout)
+        """Flush producer buffer to ensure all messages are sent."""
+        remaining = self.producer.flush(timeout)
+        if remaining > 0:
+            logger.warning(f"[KafkaClient] {remaining} messages still in queue after flush timeout")
+        return remaining
+
+    def get_producer_queue_size(self) -> int:
+        """Get the number of messages waiting in the producer queue."""
+        return len(self.producer)
+
+    def get_producer_metrics(self) -> dict:
+        """Get producer performance metrics."""
+        try:
+            metrics = self.producer.list_topics(timeout=1)
+            return {
+                "queue_size": len(self.producer),
+                "topics_metadata": len(metrics.topics) if metrics else 0,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get producer metrics: {e}")
+            return {"queue_size": len(self.producer), "error": str(e)}
 
     # ---------- Consumer ----------
     def start_consumer(
@@ -142,7 +171,7 @@ class KafkaClient:
                         # Commit the message and store the offsets after message is processed
                         if should_commit:
                             self.consumer.store_offsets(msg)
-                            self.consumer.commit(message=msg, asynchronous=False)
+                            self.consumer.commit(message=msg, asynchronous=True)
 
                     except Exception as e:
                         # Don't crash the loop on user callback errors
