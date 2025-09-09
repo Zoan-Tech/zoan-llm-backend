@@ -29,7 +29,7 @@ class KafkaClient:
         pconf = {
             "bootstrap.servers": bootstrap_servers or os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
             "enable.idempotence": True,          # safe/ordered produce
-            "linger.ms": 5,
+            "linger.ms": 0,
             "compression.type": "lz4",
         }
         if extra_producer_conf:
