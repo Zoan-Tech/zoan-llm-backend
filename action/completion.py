@@ -83,6 +83,7 @@ class CompletionAction:
         annotation = {}
         
         try:
+            logger.info("Sending completion response: %s", container_id)
             for agent, chunk in compiled_graph.stream(input, config=config, stream_mode="messages", subgraphs=True):                    
                 # Post-process chunk content to extract container ID if present
                 agent_name = agent[0] if len(agent) > 0 else "supervisor"
@@ -95,6 +96,8 @@ class CompletionAction:
                 # Flush immediately for streaming to ensure low latency
                 self.kafka_client.flush(timeout=0.1)
                 # yield json.dumps(chunk[0].model_dump(), ensure_ascii=False)
+                
+            logger.info("Sent completion response: %s", container_id)
                 
         except Exception as e:
             logger.error(f"Error during graph streaming: {str(e)}")
