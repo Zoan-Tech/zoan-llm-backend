@@ -1,14 +1,14 @@
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from typing import Dict, Any
-import logging
+from config.logging import get_logger
 
 from model import CompletionRequest
 from action import completion_action
 
 router = APIRouter()
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 @router.post("/completion/stream")
 async def create_completion_stream(request: CompletionRequest):
@@ -26,30 +26,13 @@ async def create_completion_stream(request: CompletionRequest):
             conversation_id=request.conversation_id,
             message=request.message,
             agents=request.agents,
-            use_conversation_cache=request.use_conversation_cache
         ),
         media_type="application/json"
     )
 
-@router.delete("/completion/cache/{conversation_id}")
-async def clear_conversation_cache(conversation_id: str) -> Dict[str, Any]:
-    """Clear cached compiled graph for a specific conversation.
-
-    Args:
-        conversation_id (str): The conversation ID to clear cache for.
-
-    Returns:
-        Dict[str, Any]: Status of the cache clearing operation.
-    """
-    cleared = completion_action.clear_conversation_cache(conversation_id)
-    return {
-        "success": cleared,
-        "message": f"Cache cleared for conversation {conversation_id}" if cleared else f"No cache found for conversation {conversation_id}"
-    }
-
 @router.delete("/completion/cache")
 async def clear_all_cache() -> Dict[str, str]:
-    """Clear all cached compiled graphs and conversation mappings.
+    """Clear all cached compiled graphs.
 
     Returns:
         Dict[str, str]: Confirmation message.

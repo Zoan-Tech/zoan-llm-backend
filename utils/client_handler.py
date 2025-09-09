@@ -1,7 +1,7 @@
 import httpx
-import logging
+from config.logging import  get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 class APIError(Exception):
     """Exception raised for errors in the API."""

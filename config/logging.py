@@ -1,0 +1,16 @@
+import logging
+import logging.config
+from uvicorn.config import LOGGING_CONFIG
+
+def setup_logging():
+	"""
+	Setup logging configuration for the application.
+	"""
+	logging_config = LOGGING_CONFIG.copy()
+	logging.config.dictConfig(logging_config)
+
+def get_logger() -> logging.Logger:
+	"""
+	Get the application logger.
+	"""
+	return logging.getLogger("uvicorn")

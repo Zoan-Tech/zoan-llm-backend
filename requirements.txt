@@ -81,3 +81,4 @@ xxhash==3.5.0
 zipp==3.23.0
 zstandard==0.23.0
 minio==7.2.9
+confluent-kafka==2.11.1

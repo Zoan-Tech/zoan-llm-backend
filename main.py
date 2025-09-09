@@ -1,32 +1,16 @@
 import asyncio
 from contextlib import asynccontextmanager
-import logging
 import os
 
 from services.kafka_service import KafkaClient
-# Configure application logging
-def setup_logging():
-    """Setup logging configuration for the application"""
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    
-    # Configure basic logging
-    logging.basicConfig(
-        level=getattr(logging, log_level),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler()
-        ]
-    )
-    
-    # Set specific logger levels if needed
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("minio").setLevel(logging.WARNING)
-
-setup_logging()
-
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from uvicorn.config import LOGGING_CONFIG
+
+from config.logging import setup_logging, get_logger
+setup_logging()
+
+logger = get_logger()
 
 from messaging.completion import on_message
 
@@ -51,14 +35,14 @@ async def lifespan(app: FastAPI):
     app.state.kafka = kafka
 
     kafka.start_consumer(on_message)
-    print("Kafka client started ✅")
+    logger.info("Kafka client started")
 
     yield   # <- App runs here
 
     # --- Shutdown ---
     if kafka:
         kafka.close()
-        print("Kafka client stopped 🛑")
+        logger.info("Kafka client stopped")
 
 app = FastAPI(lifespan=lifespan)
 

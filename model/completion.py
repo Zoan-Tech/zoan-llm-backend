@@ -11,8 +11,3 @@ class CompletionRequest(BaseModel):
         ...,
         description="List of agent configurations to use for the completion"
     )
-    
-    use_conversation_cache: bool = Field(
-        default=False,
-        description="Whether to use conversation-based caching for compiled graphs"
-    )

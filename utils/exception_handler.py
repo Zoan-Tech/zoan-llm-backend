@@ -1,10 +1,9 @@
-import logging
+from config.logging import get_logger
 from functools import wraps
 from typing import Type, Union, Callable, Any, Optional
 from pydantic import ValidationError
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger()
 
 class GraphBuilderError(Exception):
     """Custom exception for GraphBuilder errors."""
