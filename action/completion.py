@@ -11,6 +11,7 @@ from model import AgentConfig
 from graph.builder import GraphBuilder
 from module.client import ModuleClient
 from cache import GraphCache
+from services.kafka_service import KafkaClient
 from utils.enums import *
 from action.minio_game_builder import MinioGameBuilder
 
@@ -30,6 +31,7 @@ class CompletionAction:
         # Initialize the graph cache
         self.graph_cache = GraphCache(ttl_seconds=cache_ttl_seconds)
         self.minio_builder = MinioGameBuilder()
+        self.kafka_client = KafkaClient(topics=[os.getenv("KAFKA_TOPIC_RESPONSE")])
         
     def _setup_graph_builder(self):
         """
@@ -152,7 +154,12 @@ class CompletionAction:
                 # Post-process chunk content to extract container ID if present
                 agent_name = agent[0] if len(agent) > 0 else "supervisor"
                 self._postprocess_chunk_content(agent_name, chunk[0], annotation)
-                yield json.dumps(chunk[0].model_dump(), ensure_ascii=False)
+                self.kafka_client.produce(
+                    topic=os.getenv("KAFKA_TOPIC_RESPONSE"), 
+                    key=conversation_id, 
+                    value=chunk[0].model_dump()
+                )
+                # yield json.dumps(chunk[0].model_dump(), ensure_ascii=False)
                 
         except Exception as e:
             logger.error(f"Error during graph streaming: {str(e)}")
@@ -166,7 +173,8 @@ class CompletionAction:
                     }
                 ]
             }
-            yield json.dumps(error_object, ensure_ascii=False)
+            self.kafka_client.produce(os.getenv("KAFKA_TOPIC_RESPONSE"), json.dumps(error_object, ensure_ascii=False))
+            # yield json.dumps(error_object, ensure_ascii=False)
         
         # Build game files only if we have a valid container ID and no exception occurred
         container_id = annotation.get("container_id")
@@ -182,10 +190,14 @@ class CompletionAction:
                     "agent": "",
                     "url": f"builds/{conversation_id}/index.html"
                 }]
-                yield json.dumps({
+                self.kafka_client.produce(os.getenv("KAFKA_TOPIC_RESPONSE"), json.dumps({
                     "type": "game-built",
                     "content": game_built_object
-                }, ensure_ascii=False)
+                }, ensure_ascii=False))
+                # yield json.dumps({
+                #     "type": "game-built",
+                #     "content": game_built_object
+                # }, ensure_ascii=False)
             except Exception as e:
                 logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
                 # Don't re-raise here as the main stream has already completed

@@ -1,5 +1,9 @@
+import asyncio
+from contextlib import asynccontextmanager
 import logging
 import os
+
+from services.kafka_service import KafkaClient
 # Configure application logging
 def setup_logging():
     """Setup logging configuration for the application"""
@@ -24,6 +28,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from uvicorn.config import LOGGING_CONFIG
 
+from messaging.completion import on_message
+
 from api import (
     health_check,
     completion
@@ -31,7 +37,30 @@ from api import (
 
 from api.utils import custom_http_exception_handler, validation_exception_handler
 
-app = FastAPI()
+kafka: KafkaClient | None = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    loop = asyncio.get_running_loop()
+    kafka = KafkaClient(
+        asyncio_loop=loop,
+        bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
+        group_id=os.getenv("KAFKA_GROUP_ID"),
+        topics=[os.getenv("KAFKA_TOPIC_REQUEST")],
+    )
+    app.state.kafka = kafka
+
+    kafka.start_consumer(on_message)
+    print("Kafka client started ✅")
+
+    yield   # <- App runs here
+
+    # --- Shutdown ---
+    if kafka:
+        kafka.close()
+        print("Kafka client stopped 🛑")
+
+app = FastAPI(lifespan=lifespan)
 
 def configure_app(app: FastAPI):
     """Configure the FastAPI application with routes and exception handlers.
@@ -41,7 +70,6 @@ def configure_app(app: FastAPI):
     
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(HTTPException, custom_http_exception_handler)
-
 
 configure_app(app)  # Configure the app
 
