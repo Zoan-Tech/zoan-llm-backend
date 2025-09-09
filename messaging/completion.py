@@ -1,11 +1,11 @@
 import json
 from action import completion_action
 
-import logging
+from config.logging import get_logger
 
 from model.completion import CompletionRequest
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 TOPIC_CREATE_COMPLETION = "llm.channel.completion"
 

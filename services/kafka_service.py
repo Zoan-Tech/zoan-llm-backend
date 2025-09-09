@@ -1,13 +1,13 @@
 import os
 import asyncio, inspect
 import json
-import logging
+from config.logging import get_logger
 
 from confluent_kafka import Producer, Consumer, KafkaException
 from threading import Thread, Event
 from typing import Callable, Optional, Dict, Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 class KafkaClient:
     def __init__(
@@ -57,10 +57,10 @@ class KafkaClient:
     # ---------- Producer ----------
     def _delivery_report(self, err, msg):
         if err is not None:
-            logger.error(f"Delivery failed: {err} | topic={msg.topic()} partition={msg.partition()}")
+            logger.error(f"[KafkaClient] Delivery failed: {err} | topic={msg.topic()} partition={msg.partition()}")
         else:
             logger.debug(
-                "Delivered to %s [%d] @ %d",
+                "[KafkaClient] Delivered to %s [%d] @ %d",
                 msg.topic(), msg.partition(), msg.offset(),
             )
 
@@ -104,14 +104,14 @@ class KafkaClient:
         self.consumer.subscribe(self.topics)
 
         def _loop():
-            logger.info("Consumer started, subscribed to %s", self.topics)
+            logger.info("[KafkaClient] Consumer started, subscribed to %s", self.topics)
             try:
                 while not self._stop.is_set():
                     msg = self.consumer.poll(poll_timeout)
                     if msg is None:
                         continue
                     if msg.error():
-                        logger.error("Consumer error: %s", msg.error())
+                        logger.error("[KafkaClient] Consumer error: %s", msg.error())
                         continue
 
                     key = msg.key().decode("utf-8") if msg.key() else None
@@ -146,15 +146,15 @@ class KafkaClient:
 
                     except Exception as e:
                         # Don't crash the loop on user callback errors
-                        logger.exception("on_message error: %s", e)
+                        logger.exception("[KafkaClient] on_message error: %s", e)
             except KafkaException as e:
-                logger.exception("Kafka exception: %s", e)
+                logger.exception("[KafkaClient] Kafka exception: %s", e)
             finally:
                 try:
                     self.consumer.close()
                 except Exception:
                     pass
-                logger.info("Consumer stopped")
+                logger.info("[KafkaClient] Consumer stopped")
 
         self._stop.clear()
         self._thread = Thread(target=_loop, daemon=True)
