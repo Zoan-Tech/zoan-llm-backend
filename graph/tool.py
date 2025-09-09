@@ -1,5 +1,4 @@
-import logging
-import re
+from config.logging import get_logger
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field, create_model
 from langfuse import observe
@@ -14,7 +13,7 @@ from model import (
 
 from utils.helper import to_py_type, _spec_get, _sanitize_name
 
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 class ToolBuilder:
     def __init__(

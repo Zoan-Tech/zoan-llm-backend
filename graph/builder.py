@@ -1,12 +1,10 @@
 from typing import Any, Dict, Optional
-from langfuse import Langfuse, observe
-import logging
+from langfuse import observe
 
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 from langchain.chat_models import init_chat_model
-from module.client import ModuleClient
 from langchain_core.tools import StructuredTool
 
 from model import (
@@ -16,6 +14,10 @@ from model import (
 )
 
 from graph.tool import ToolBuilder
+from cache import GraphCache, DEFAULT_GRAPH_CACHE
+from prompt import BasePromptManager, DEFAULT_PROMPT_MANAGER
+from graph.memory import Memory, DEFAULT_MEMORY
+from module.client import ModuleClient, DEFAULT_MODULE_CLIENT
 
 from utils.exception_handler import (
     GraphBuilderError,
@@ -26,8 +28,11 @@ from utils.exception_handler import (
     validation_handler,
 )
 from utils.helper import _sanitize_name
+from utils.enums import *
 
-logger = logging.getLogger(__name__)
+from config.logging import get_logger
+
+logger = get_logger()
 
 class GraphBuilder:
     """
@@ -41,14 +46,14 @@ class GraphBuilder:
 
     def __init__(
         self,
-        module_client: ModuleClient,
-        langfuse_client: Langfuse,
-        checkpointer: Optional[Any] = None,
-        store: Optional[Any] = None
+        graph_cache: GraphCache = DEFAULT_GRAPH_CACHE,
+        prompt_manager: BasePromptManager = DEFAULT_PROMPT_MANAGER,
+        memory: Memory = DEFAULT_MEMORY,
+        module_client: ModuleClient = DEFAULT_MODULE_CLIENT,
     ):
-        self.langfuse_client = langfuse_client
-        self.checkpointer = checkpointer
-        self.store = store
+        self.graph_cache = graph_cache
+        self.prompt_manager = prompt_manager
+        self.memory = memory
         self.tool_builder = ToolBuilder(module_client)
     
     @safe_operation(default_return={})
@@ -60,8 +65,6 @@ class GraphBuilder:
         for src_key, dst_key in mapping.items():
             if src_key in raw:
                 out[dst_key] = raw[src_key]
-            else:
-                logger.warning(f"Source key '{src_key}' not found in response")
         return out
     
     @observe(name="construct_agent_toolset")
@@ -72,22 +75,14 @@ class GraphBuilder:
         """
         tools = []
         
-        if not workflows:
-            logger.warning("No workflows provided for agent toolset construction")
-            return tools
-            
-        for workflow in workflows:
-            if not workflow.steps:
-                logger.warning(f"No steps found in workflow '{workflow.name}'")
-                continue
-                
+        for workflow in workflows: 
             for step in workflow.steps:
                 try:
                     tool = self.tool_builder._construct_tool(workflow.name, step)
                     if tool:
                         tools.append(tool)
                 except Exception as e:
-                    logger.error(f"Failed to construct tool for step '{step.name}' in workflow '{workflow.name}': {e}")
+                    logger.error(f"[GraphBuilder] Failed to construct tool for step '{step.name}' in workflow '{workflow.name}': {e}")
                     # Continue with other tools rather than failing completely
                     continue
     
@@ -138,20 +133,20 @@ class GraphBuilder:
         Get the prompt for constructing the agent.
         """
         if is_primary:
-            prompt = self.langfuse_client.get_prompt(self.PROMPT_PRIMARY_AGENT_CONSTRUCTION)
+            prompt = self.prompt_manager.get_prompt(self.PROMPT_PRIMARY_AGENT_CONSTRUCTION)
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
             compiled_prompt = prompt.compile()
             return compiled_prompt
         elif agent_config.name == self.GAME_GENERATOR:
-            prompt = self.langfuse_client.get_prompt(self.PROMPT_GAME_GENERATOR_CONSTRUCTION)
+            prompt = self.prompt_manager.get_prompt(self.PROMPT_GAME_GENERATOR_CONSTRUCTION)
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_GAME_GENERATOR_CONSTRUCTION}' not found in Langfuse.")
             
             compiled_prompt = prompt.compile()
             return compiled_prompt
         else:
-            prompt = self.langfuse_client.get_prompt(self.PROMPT_AGENT_CONSTRUCTION)
+            prompt = self.prompt_manager.get_prompt(self.PROMPT_AGENT_CONSTRUCTION)
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
             
@@ -177,7 +172,7 @@ class GraphBuilder:
         # Validate workflows have steps
         for workflow in agent_config.workflows:
             if not workflow.steps:
-                logger.warning(f"Workflow '{workflow.name}' has no steps")
+                logger.warning(f"[GraphBuilder] Workflow '{workflow.name}' has no steps")
 
     def _construct_llm(self, agent_config: AgentConfig) -> Any:
         """
@@ -212,8 +207,6 @@ class GraphBuilder:
                 "container": {"type": "auto"},
             }
         ]
-        if not tools:
-            logger.warning("No tools were successfully constructed for the agent")
 
         # Get prompt
         prompt = self._get_agent_construction_prompt(agent_config)
@@ -241,6 +234,7 @@ class GraphBuilder:
             try:
                 agent = self.build_agent(agent_config)
                 successfully_added.append(agent)
+                # TODO: Re-enable handoff tools when stable
                 # primary_tools.append(
                 #     create_handoff_tool(
                 #         agent_name=_sanitize_name(agent_config.name.lower()),
@@ -248,11 +242,9 @@ class GraphBuilder:
                 #         description=f"Hand off to agent {_sanitize_name(agent_config.name.lower())}",
                 #     )
                 # )
-
-                logger.info(f"Successfully added agent '{agent_config.name}' to graph")
                 
             except Exception as e:
-                logger.error(f"Failed to build agent '{agent_config.name}': {e}")
+                logger.error(f"[GraphBuilder] Failed to build agent '{agent_config.name}': {e}")
                 # Continue with other agents rather than failing completely
                 continue
 
@@ -265,7 +257,19 @@ class GraphBuilder:
         )
 
         return primary_agent.compile(
-            checkpointer=self.checkpointer,
-            store=self.store,
+            checkpointer=self.memory.saver,
+            store=self.memory.store,
         )
 
+    def get_compiled_graph(
+        self,
+        agents: list[AgentConfig]
+    ) -> CompiledStateGraph:
+        """
+        Get a compiled state graph, using cache if available.
+        """
+        return self.graph_cache.get_or_store_compiled_graph(
+            agents,
+            lambda agents: self.build_graph(agents)
+        )
+        

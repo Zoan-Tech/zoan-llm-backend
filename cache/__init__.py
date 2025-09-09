@@ -7,6 +7,6 @@ This module provides caching infrastructure including:
 """
 
 from .mem_cache import MemCache
-from .graph_cache import GraphCache
+from .graph_cache import GraphCache, DEFAULT_GRAPH_CACHE
 
 __all__ = ['MemCache', 'GraphCache']
