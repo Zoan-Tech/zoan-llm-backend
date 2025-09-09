@@ -18,7 +18,6 @@ async def completion_message_handler(key, value, headers, meta):
         conversation_id=completion_object.conversation_id,
         message=completion_object.message,
         agents=completion_object.agents,
-        use_conversation_cache=completion_object.use_conversation_cache
     )
     return True
 

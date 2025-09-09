@@ -63,7 +63,6 @@ class CompletionAction:
         :param conversation_id: The conversation ID for thread management.
         :param message: The user message to process.
         :param agents: List of agent configurations.
-        :param use_conversation_cache: Whether to use conversation-based caching.
         :return: The response from the chat model.
         """
         compiled_graph = self.graph_builder.get_compiled_graph(agents)
