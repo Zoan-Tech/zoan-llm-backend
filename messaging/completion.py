@@ -12,7 +12,7 @@ TOPIC_CREATE_COMPLETION = "llm.channel.completion"
 async def completion_message_handler(key, value, headers, meta):
     value = json.loads(value)
     completion_object = CompletionRequest(**value)
-    logger.info("Received completion request: %s", completion_object.model_dump())
+    logger.debug("Received completion request: %s", completion_object.model_dump())
     await completion_action.create_completion(
         user_id=completion_object.user_id,
         conversation_id=completion_object.conversation_id,

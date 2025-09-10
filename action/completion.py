@@ -45,8 +45,11 @@ class CompletionAction:
                     for ann in annotations:
                         if "container_id" in ann:
                             annotation.update(ann)  # Update the dictionary in-place
-        chunk.agent = agent_name
-        
+                            
+        for message in chunk.content:
+            if type(message) == dict and message.get("type") == "text":
+                message["agent"] = agent_name
+                
     @observe(as_type="generation")
     async def create_completion(
         self,
