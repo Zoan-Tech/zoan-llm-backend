@@ -13,5 +13,5 @@ def get_logger() -> logging.Logger:
 	"""
 	Get the application logger.
 	"""
-	LOGGING_CONFIG["loggers"]["uvicorn"]["level"] = "DEBUG"
+	# LOGGING_CONFIG["loggers"]["uvicorn"]["level"] = "DEBUG"
 	return logging.getLogger("uvicorn")

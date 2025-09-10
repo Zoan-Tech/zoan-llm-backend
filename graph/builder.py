@@ -17,6 +17,8 @@ from graph.tool import ToolBuilder
 from cache import GraphCache, DEFAULT_GRAPH_CACHE
 from prompt import BasePromptManager, DEFAULT_PROMPT_MANAGER
 from graph.memory import Memory, DEFAULT_MEMORY
+from langmem import create_manage_memory_tool, create_search_memory_tool
+
 from module.client import ModuleClient, DEFAULT_MODULE_CLIENT
 
 from utils.exception_handler import (
@@ -226,7 +228,12 @@ class GraphBuilder:
         primary_agent_config = agents.pop(0)
         primary_llm = self._construct_llm(primary_agent_config)
         primary_prompt = self._get_agent_construction_prompt(primary_agent_config, is_primary=True)
-        primary_tools = None
+        # Init primary tools with default memory tools
+        primary_tools = [
+            # Memory tools use LangGraph's BaseStore for persistence (4)
+            create_manage_memory_tool(namespace=("memories",)),
+            create_search_memory_tool(namespace=("memories",)),
+        ]
 
         successfully_added = []
         

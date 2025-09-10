@@ -102,7 +102,6 @@ class CompletionAction:
             # After the stream ends, send a final chunk indicating completion
             if last_chunk:
                 last_chunk.response_metadata["status"] = FINISHED_STATUS
-                yield json.dumps(last_chunk.model_dump(), ensure_ascii=False)
                 self.kafka_client.produce(
                     topic=os.getenv("KAFKA_TOPIC_RESPONSE"), 
                     key=conversation_id, 
