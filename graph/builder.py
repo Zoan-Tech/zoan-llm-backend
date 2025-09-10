@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from langfuse import observe
 
 from langgraph.graph.state import CompiledStateGraph
@@ -130,15 +130,17 @@ class GraphBuilder:
     
     @observe(name="get_agent_construction_prompt")
     @graph_builder_exception_handler("Failed to get agent construction prompt")
-    def _get_agent_construction_prompt(self, agent_config: AgentConfig, is_primary: bool = False) -> str:
+    def _get_agent_construction_prompt(self, agent_config: AgentConfig, is_primary: bool = False, **kwargs) -> str:
         """
         Get the prompt for constructing the agent.
         """
         if is_primary:
+            current_avail_agents = kwargs.get("current_avail_agents", "No other agents available.")
             prompt = self.prompt_manager.get_prompt(self.PROMPT_PRIMARY_AGENT_CONSTRUCTION)
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
-            compiled_prompt = prompt.compile()
+            logger.debug(f"Current available agents for primary: {current_avail_agents}")
+            compiled_prompt = prompt.compile(current_avail_agents=current_avail_agents)
             return compiled_prompt
         elif agent_config.name == self.GAME_GENERATOR:
             prompt = self.prompt_manager.get_prompt(self.PROMPT_GAME_GENERATOR_CONSTRUCTION)
@@ -216,6 +218,21 @@ class GraphBuilder:
         # Create the react agent
         return create_react_agent(llm, tools=tools, prompt=prompt, name=_sanitize_name(agent_config.name.lower()))
 
+    def _current_avail_agents(self, agents: list[AgentConfig]) -> Tuple[dict, str]:
+        """Get a mapping of currently available agents by name."""
+        try:
+            attr_to_keep = ["name", "description", "is_enabled"]
+            agent_list = {agent.name: {k: getattr(agent, k) for k in attr_to_keep} for agent in agents if not agent.is_primary}   
+            agent_list_str = "\n".join(
+                f"- {name}: {info.get('description', 'No description provided')} ({'Enabled' if info.get('is_enabled', True) else 'Disabled'})"
+                for name, info in agent_list.items()
+            ) if agent_list else "No other agents available."
+            
+            return agent_list, agent_list_str
+        except Exception as e:
+            logger.error(f"[GraphBuilder] Failed to get current available agents: {e}")
+            return {}, "No other agents available."
+
     @observe(name="build_graph")
     @graph_builder_exception_handler("Failed to build state graph")
     def build_graph(self, agents: list[AgentConfig]) -> CompiledStateGraph:
@@ -227,7 +244,8 @@ class GraphBuilder:
 
         primary_agent_config = agents.pop(0)
         primary_llm = self._construct_llm(primary_agent_config)
-        primary_prompt = self._get_agent_construction_prompt(primary_agent_config, is_primary=True)
+        _, current_avail_agents = self._current_avail_agents(agents)
+        primary_prompt = self._get_agent_construction_prompt(primary_agent_config, is_primary=True, current_avail_agents=current_avail_agents)
         # Init primary tools with default memory tools
         primary_tools = [
             # Memory tools use LangGraph's BaseStore for persistence (4)
