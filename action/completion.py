@@ -12,6 +12,9 @@ from utils.enums import *
 from action.minio_game_builder import MinioGameBuilder
 
 logger = get_logger()
+PRIMARY_AGENT = "supervisor"
+FINISHED_STATUS = "finished"
+AGENT_COMPLETED_STATUS = "completed"
 
 class CompletionAction:
     """Handles completion actions using LangGraph and a Postgres database."""
@@ -26,7 +29,7 @@ class CompletionAction:
         self.minio_builder = MinioGameBuilder()
         self.kafka_client = KafkaClient(topics=[os.getenv("KAFKA_TOPIC_RESPONSE")])
         
-    def _postprocess_chunk_content(self, agent, chunk, annotation):
+    def _postprocess_chunk_content(self, agent_name, chunk, annotation):
         """
         Post-process chunk content to extract container ID if present.
         
@@ -42,12 +45,8 @@ class CompletionAction:
                     for ann in annotations:
                         if "container_id" in ann:
                             annotation.update(ann)  # Update the dictionary in-place
-                            
-                elif "text" in message:
-                    message.update({
-                        "agent": agent
-                    })
-
+        chunk.agent = agent_name
+        
     @observe(as_type="generation")
     async def create_completion(
         self,
@@ -81,13 +80,16 @@ class CompletionAction:
             "recursion_limit": 100,
         }
         annotation = {}
+        last_chunk = None
         
         try:
             logger.info("Sending completion response: %s", conversation_id)
             for agent, chunk in compiled_graph.stream(input, config=config, stream_mode="messages", subgraphs=True):                    
                 # Post-process chunk content to extract container ID if present
-                agent_name = agent[0] if len(agent) > 0 else "supervisor"
+                agent_name = agent[0].split(":")[0] if len(agent) > 0 else PRIMARY_AGENT
+                
                 self._postprocess_chunk_content(agent_name, chunk[0], annotation)
+                
                 self.kafka_client.produce(
                     topic=os.getenv("KAFKA_TOPIC_RESPONSE"), 
                     key=conversation_id, 
@@ -95,8 +97,19 @@ class CompletionAction:
                 )
                 # Flush immediately for streaming to ensure low latency
                 self.kafka_client.flush(timeout=0.1)
-                # yield json.dumps(chunk[0].model_dump(), ensure_ascii=False)
-                
+                last_chunk = chunk[0]
+            
+            # After the stream ends, send a final chunk indicating completion
+            if last_chunk:
+                last_chunk.response_metadata["status"] = FINISHED_STATUS
+                yield json.dumps(last_chunk.model_dump(), ensure_ascii=False)
+                self.kafka_client.produce(
+                    topic=os.getenv("KAFKA_TOPIC_RESPONSE"), 
+                    key=conversation_id, 
+                    value=last_chunk.model_dump()
+                )
+                self.kafka_client.flush(timeout=0.1)
+            
             logger.info("Sent completion response: %s", conversation_id)
                 
         except Exception as e:
@@ -107,12 +120,11 @@ class CompletionAction:
                     {
                         "type": "text",
                         "text": f"Error during processing: {str(e)}",
-                        "agent": "supervisor"
+                        "agent": PRIMARY_AGENT
                     }
                 ]
             }
             self.kafka_client.produce(os.getenv("KAFKA_TOPIC_RESPONSE"), json.dumps(error_object, ensure_ascii=False))
-            # yield json.dumps(error_object, ensure_ascii=False)
         
         # Build game files only if we have a valid container ID and no exception occurred
         container_id = annotation.get("container_id")
