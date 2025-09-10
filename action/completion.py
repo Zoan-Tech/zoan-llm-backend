@@ -102,16 +102,6 @@ class CompletionAction:
                 self.kafka_client.flush(timeout=0.1)
                 last_chunk = chunk[0]
             
-            # After the stream ends, send a final chunk indicating completion
-            if last_chunk:
-                last_chunk.response_metadata["status"] = FINISHED_STATUS
-                self.kafka_client.produce(
-                    topic=os.getenv("KAFKA_TOPIC_RESPONSE"), 
-                    key=conversation_id, 
-                    value=last_chunk.model_dump()
-                )
-                self.kafka_client.flush(timeout=0.1)
-            
             logger.info("Sent completion response: %s", conversation_id)
                 
         except Exception as e:
@@ -153,6 +143,15 @@ class CompletionAction:
             except Exception as e:
                 logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
                 # Don't re-raise here as the main stream has already completed
+                    # After the stream ends, send a final chunk indicating completion
+        if last_chunk:
+            last_chunk.response_metadata["status"] = FINISHED_STATUS
+            self.kafka_client.produce(
+                topic=os.getenv("KAFKA_TOPIC_RESPONSE"), 
+                key=conversation_id, 
+                value=last_chunk.model_dump()
+            )
+            self.kafka_client.flush(timeout=0.1)
 
     def clear_all_cache(self) -> None:
         """
