@@ -116,7 +116,11 @@ class CompletionAction:
                     }
                 ]
             }
-            self.kafka_client.produce(os.getenv("KAFKA_TOPIC_RESPONSE"), json.dumps(error_object, ensure_ascii=False))
+            self.kafka_client.produce(
+                topic=os.getenv("KAFKA_TOPIC_RESPONSE"),
+                key=conversation_id,
+                value=error_object,
+            )
         
         # Build game files only if we have a valid container ID and no exception occurred
         container_id = annotation.get("container_id")
@@ -132,14 +136,14 @@ class CompletionAction:
                     "agent": "",
                     "url": f"builds/{conversation_id}/index.html"
                 }]
-                self.kafka_client.produce(os.getenv("KAFKA_TOPIC_RESPONSE"), json.dumps({
-                    "type": "game-built",
-                    "content": game_built_object
-                }, ensure_ascii=False))
-                # yield json.dumps({
-                #     "type": "game-built",
-                #     "content": game_built_object
-                # }, ensure_ascii=False)
+                self.kafka_client.produce(
+                    topic=os.getenv("KAFKA_TOPIC_RESPONSE"),
+                    key=conversation_id,
+                    value={
+                        "type": "game-built",
+                        "content": game_built_object
+                    }
+                )
             except Exception as e:
                 logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
                 # Don't re-raise here as the main stream has already completed

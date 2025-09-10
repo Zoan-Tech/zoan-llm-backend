@@ -7,7 +7,7 @@ from model.completion import CompletionRequest
 
 logger = get_logger()
 
-TOPIC_CREATE_COMPLETION = "llm.channel.completion"
+TOPIC_CREATE_COMPLETION = "llm.channel.completion.test"
 
 async def completion_message_handler(key, value, headers, meta):
     value = json.loads(value)
