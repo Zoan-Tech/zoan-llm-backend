@@ -17,6 +17,7 @@ class Memory:
 	  		self.EMBEDDING_MODEL,
 			api_key=os.environ.get(SecretEnum.OPENAI_API_KEY.value)
 		)
+		self._setup_graph_memory()
 
 	def _setup_graph_memory(self):
 		"""
