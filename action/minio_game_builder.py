@@ -1,15 +1,15 @@
 import os
-import httpx
 import zipfile
 from config.logging import get_logger
 from io import BytesIO
-from typing import List
+from typing import Optional
 from services.minio_service import MinioService, MinioConfig
+from openai import AsyncOpenAI
 
 logger = get_logger()
 
 class MinioGameBuilder:
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    openai_client = AsyncOpenAI()
     
     def __init__(self):
         try:
@@ -24,24 +24,18 @@ class MinioGameBuilder:
             self.minio_service = None
             self.minio_available = False
     
-    async def _get_container_zip_files(self, container_id: str) -> List[str]:
+    async def _get_container_zip_file(self, container_id: str) -> Optional[str]:
         """Get zip files from OpenAI container"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"https://api.openai.com/v1/containers/{container_id}/files",
-                    headers={"Authorization": f"Bearer {self.OPENAI_API_KEY}"}
-                )
+            logger.info(f"[MinioGameBuilder] Listing files in container {container_id}")
+            response = await self.openai_client.containers.files.list(container_id=container_id, order='desc')
+            zip_file_id = None
+            for file in response.data:
+                if file.path.endswith('.zip'):
+                    zip_file_id = file.id
+                    break
                 
-                result = response.json()
-                zip_file_ids = []
-                
-                if result.get('data') and isinstance(result['data'], list):
-                    for file in result['data']:
-                        if file.get('path', '').endswith('.zip'):
-                            zip_file_ids.append(file['id'])
-                
-                return zip_file_ids
+            return zip_file_id
         except Exception as e:
             logger.error(f"[MinioGameBuilder] Failed to list container files for {container_id}: {e}")
             raise
@@ -50,17 +44,8 @@ class MinioGameBuilder:
         """Download file content from OpenAI Files API"""
         logger.info(f"[MinioGameBuilder] Downloading file {file_id} from container {container_id}")
         try:
-            async with httpx.AsyncClient() as client:
-                url = f"https://api.openai.com/v1/containers/{container_id}/files/{file_id}/content"
-                response = await client.get(
-                    url,
-                    headers={"Authorization": f"Bearer {self.OPENAI_API_KEY}"}
-                )
-                
-                if response.status_code != 200:
-                    raise Exception(f"HTTP error! status: {response.status_code}")
-                
-                return response.content
+            response = await self.openai_client.containers.files.content.retrieve(container_id=container_id, file_id=file_id)
+            return response.read()
         except Exception as e:
             logger.error(f"[MinioGameBuilder] Failed to download file {file_id}: {e}")
             raise
@@ -113,14 +98,15 @@ class MinioGameBuilder:
         """Build game files from OpenAI container"""
         logger.info(f"[MinioGameBuilder] Building game files for thread {thread_id} - {container_id}")
         try:
-            zip_file_ids = await self._get_container_zip_files(container_id)
-            if not zip_file_ids:
+            zip_file_id = await self._get_container_zip_file(container_id)
+            if not zip_file_id:
                 raise Exception(f"No zip files found in container {container_id}")
 
-            for file_id in zip_file_ids:
-                zip_content = await self._download_file_from_openai(container_id, file_id)
-                await self._extract_and_upload_to_minio(zip_content, thread_id)
+            zip_content = await self._download_file_from_openai(container_id, zip_file_id)
+            await self._extract_and_upload_to_minio(zip_content, thread_id)
                         
         except Exception as e:
             logger.error(f"[MinioGameBuilder] Error building game files from container {container_id}: {e}")
             raise
+        
+DEFAULT_MINIO_GAME_BUILDER = MinioGameBuilder()

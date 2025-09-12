@@ -1,5 +1,5 @@
 import json
-from action import completion_action
+from action.completion import completion_action
 
 from config.logging import get_logger
 

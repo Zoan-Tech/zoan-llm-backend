@@ -5,7 +5,12 @@ from typing import Dict, Any
 
 from langfuse import observe
 
-from model import AgentConfig
+from model import (
+    AgentConfig,
+    StreamingChunk,
+    ChunkContent,
+    ResponseMetadata,
+)
 from graph.builder import GraphBuilder
 from services.kafka_service import KafkaClient
 from utils.enums import *
@@ -15,6 +20,7 @@ logger = get_logger()
 PRIMARY_AGENT = "supervisor"
 FINISHED_STATUS = "finished"
 AGENT_COMPLETED_STATUS = "completed"
+KAFKA_TOPIC_RESPONSE = "KAFKA_TOPIC_RESPONSE"
 
 class CompletionAction:
     """Handles completion actions using LangGraph and a Postgres database."""
@@ -27,9 +33,46 @@ class CompletionAction:
         """
         self.graph_builder = GraphBuilder()
         self.minio_builder = MinioGameBuilder()
-        self.kafka_client = KafkaClient(topics=[os.getenv("KAFKA_TOPIC_RESPONSE")])
+        self.kafka_client = KafkaClient(topics=[os.getenv(KAFKA_TOPIC_RESPONSE)])
         
-    def _postprocess_chunk_content(self, agent_name, chunk, annotation):
+    def _convert_chunk_content(self, chunk, agent_name) -> StreamingChunk:
+        """
+        Convert chunk content to the StreamingChunk model.
+        
+        :param chunk: The chunk of data to convert.
+        :return: Converted StreamingChunk object.
+        """
+        content_list = []                            
+        if "reasoning" in chunk.additional_kwargs:
+            for summary in chunk.additional_kwargs["reasoning"].get("summary", []):
+                content_list.append(ChunkContent(
+                    type="text",
+                    text=summary.get("text", ""),
+                    agent=agent_name,
+                    index=summary.get("index", 0),
+                    url="",
+                ))
+            
+        for message in chunk.content:
+            if type(message) == dict and message.get("type") == "text":
+                content_list.append(ChunkContent(
+                    type=message.get("type"),
+                    text=message.get("text", ""),
+                    agent=agent_name,
+                    index=message.get("index", 0),
+                    url=message.get("url", ""),
+                ))
+                
+        response_metadata = ResponseMetadata(
+            status=chunk.response_metadata.get("status", "")
+        )
+        
+        return StreamingChunk(
+            content=content_list,
+            response_metadata=response_metadata
+        )
+        
+    def _postprocess_chunk_content(self, agent_name, chunk, annotation) -> StreamingChunk:
         """
         Post-process chunk content to extract container ID if present.
         
@@ -45,10 +88,8 @@ class CompletionAction:
                     for ann in annotations:
                         if "container_id" in ann:
                             annotation.update(ann)  # Update the dictionary in-place
-                            
-        for message in chunk.content:
-            if type(message) == dict and message.get("type") == "text":
-                message["agent"] = agent_name
+
+        return self._convert_chunk_content(chunk, agent_name)
                 
     @observe(as_type="generation")
     async def create_completion(
@@ -79,6 +120,7 @@ class CompletionAction:
             "configurable": {
                 "user_id": user_id,
                 "thread_id": conversation_id,
+                "code": None,  # To be filled if found in annotations
             },
             "recursion_limit": 100,
         }
@@ -90,21 +132,28 @@ class CompletionAction:
             for agent, chunk in compiled_graph.stream(input, config=config, stream_mode="messages", subgraphs=True):                    
                 # Post-process chunk content to extract container ID if present
                 agent_name = agent[0].split(":")[0] if len(agent) > 0 else PRIMARY_AGENT
+                logger.debug("Chunks received from agent %s: %s", agent_name, chunk)
                 
-                self._postprocess_chunk_content(agent_name, chunk[0], annotation)
-                
+                with open("debug_chunk.json", "a") as f:
+                    f.write(json.dumps(chunk[0].model_dump()) + "\n")
+                    
+                streaming_chunk: StreamingChunk = self._postprocess_chunk_content(agent_name, chunk[0], annotation)
+                    
+                # yield json.dumps(chunk[0].model_dump())
                 self.kafka_client.produce(
-                    topic=os.getenv("KAFKA_TOPIC_RESPONSE"), 
+                    topic=os.getenv(KAFKA_TOPIC_RESPONSE), 
                     key=conversation_id, 
-                    value=chunk[0].model_dump()
+                    value=streaming_chunk.model_dump()
                 )
                 # Flush immediately for streaming to ensure low latency
                 self.kafka_client.flush(timeout=0.1)
-                last_chunk = chunk[0]
+                last_chunk = streaming_chunk
             
             logger.info("Sent completion response: %s", conversation_id)
                 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             logger.error(f"Error during graph streaming: {str(e)}")
             error_object = {
                 "type": "error",
@@ -117,7 +166,7 @@ class CompletionAction:
                 ]
             }
             self.kafka_client.produce(
-                topic=os.getenv("KAFKA_TOPIC_RESPONSE"),
+                topic=os.getenv(KAFKA_TOPIC_RESPONSE),
                 key=conversation_id,
                 value=error_object,
             )
@@ -137,7 +186,7 @@ class CompletionAction:
                     "url": f"builds/{conversation_id}/index.html"
                 }]
                 self.kafka_client.produce(
-                    topic=os.getenv("KAFKA_TOPIC_RESPONSE"),
+                    topic=os.getenv(KAFKA_TOPIC_RESPONSE),
                     key=conversation_id,
                     value={
                         "type": "game-built",
@@ -149,9 +198,9 @@ class CompletionAction:
                 # Don't re-raise here as the main stream has already completed
                     # After the stream ends, send a final chunk indicating completion
         if last_chunk:
-            last_chunk.response_metadata["status"] = FINISHED_STATUS
+            last_chunk.response_metadata.status = FINISHED_STATUS
             self.kafka_client.produce(
-                topic=os.getenv("KAFKA_TOPIC_RESPONSE"), 
+                topic=os.getenv(KAFKA_TOPIC_RESPONSE), 
                 key=conversation_id, 
                 value=last_chunk.model_dump()
             )
