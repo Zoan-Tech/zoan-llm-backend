@@ -133,9 +133,6 @@ class CompletionAction:
                 # Post-process chunk content to extract container ID if present
                 agent_name = agent[0].split(":")[0] if len(agent) > 0 else PRIMARY_AGENT
                 logger.debug("Chunks received from agent %s: %s", agent_name, chunk)
-                
-                with open("debug_chunk.json", "a") as f:
-                    f.write(json.dumps(chunk[0].model_dump()) + "\n")
                     
                 streaming_chunk: StreamingChunk = self._postprocess_chunk_content(agent_name, chunk[0], annotation)
                     
@@ -152,8 +149,6 @@ class CompletionAction:
             logger.info("Sent completion response: %s", conversation_id)
                 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             logger.error(f"Error during graph streaming: {str(e)}")
             error_object = {
                 "type": "error",

@@ -19,8 +19,8 @@ class GameGenerator:
         
     def get_game_generation_prompt(self, **kwargs) -> str:
         prompt = self.prompt_manager.get_prompt(self.PROMPT_GAME_GENERATOR_CONSTRUCTION, label="production")
-        complied_prompt = prompt.compile(**kwargs)
-        return complied_prompt
+        compiled_prompt = prompt.compile(**kwargs)
+        return compiled_prompt
     
     def get_toolset(self):
         code_interpreter_tool = {
