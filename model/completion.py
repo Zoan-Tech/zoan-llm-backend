@@ -18,6 +18,7 @@ class ChunkContent(BaseModel):
     agent: str = Field(..., description="Agent identifier", json_schema_extra={"json": "agent"})
     index: float = Field(..., description="Index of the content", json_schema_extra={"json": "index"})
     url: str = Field(..., description="URL associated with the content", json_schema_extra={"json": "url"})
+    game_version: str = Field(None, description="Game version identifier", json_schema_extra={"json": "game_version"})
     
 class ResponseMetadata(BaseModel):
     status: str = Field(..., description="Status of the response", json_schema_extra={"json": "status"})

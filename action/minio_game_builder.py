@@ -5,6 +5,7 @@ from io import BytesIO
 from typing import Optional
 from services.minio_service import MinioService, MinioConfig
 from openai import AsyncOpenAI
+import uuid
 
 logger = get_logger()
 
@@ -94,7 +95,7 @@ class MinioGameBuilder:
             logger.error(f"[MinioGameBuilder] Failed to extract and upload zip to MinIO: {e}")
             raise
     
-    async def build_openai_game_file(self, container_id: str, thread_id: str) -> None:
+    async def build_openai_game_file(self, container_id: str, thread_id: str) -> str:
         """Build game files from OpenAI container"""
         logger.info(f"[MinioGameBuilder] Building game files for thread {thread_id} - {container_id}")
         try:
@@ -103,7 +104,11 @@ class MinioGameBuilder:
                 raise Exception(f"No zip files found in container {container_id}")
 
             zip_content = await self._download_file_from_openai(container_id, zip_file_id)
-            await self._extract_and_upload_to_minio(zip_content, thread_id)
+            game_version = uuid.uuid4()
+            minio_prefix = f"{thread_id}/{game_version}"
+            await self._extract_and_upload_to_minio(zip_content, minio_prefix)
+            
+            return minio_prefix
                         
         except Exception as e:
             logger.error(f"[MinioGameBuilder] Error building game files from container {container_id}: {e}")

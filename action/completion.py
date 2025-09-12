@@ -142,8 +142,8 @@ class CompletionAction:
                     key=conversation_id, 
                     value=streaming_chunk.model_dump()
                 )
-                # Flush immediately for streaming to ensure low latency
-                self.kafka_client.flush(timeout=0.1)
+                # Batch messages for better performance, only flush at end
+                # self.kafka_client.flush(timeout=0.1)
                 last_chunk = streaming_chunk
             
             logger.info("Sent completion response: %s", conversation_id)
@@ -170,23 +170,26 @@ class CompletionAction:
         container_id = annotation.get("container_id")
         if container_id:
             try:
-                await self.minio_builder.build_openai_game_file(
+                minio_prefix = await self.minio_builder.build_openai_game_file(
                     container_id, 
                     thread_id=conversation_id
                 )
-                game_built_object = [{
-                    "type": "game-signal",
-                    "text": "success",
-                    "agent": "",
-                    "url": f"builds/{conversation_id}/index.html"
-                }]
+                chunk_content = ChunkContent(
+                    type="game-signal",
+                    text="",
+                    agent=PRIMARY_AGENT,
+                    index=0,
+                    url=f"builds/{minio_prefix}/index.html",
+                    game_version=str(minio_prefix.split('/')[-1])
+                )
+                game_built_object = StreamingChunk(
+                    content=[chunk_content],
+                    response_metadata=ResponseMetadata(status=AGENT_COMPLETED_STATUS)
+                )
                 self.kafka_client.produce(
                     topic=os.getenv(KAFKA_TOPIC_RESPONSE),
                     key=conversation_id,
-                    value={
-                        "type": "game-built",
-                        "content": game_built_object
-                    }
+                    value=game_built_object.model_dump()
                 )
             except Exception as e:
                 logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
