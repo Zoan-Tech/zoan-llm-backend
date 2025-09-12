@@ -4,7 +4,7 @@ from typing import Dict, Any
 from config.logging import get_logger
 
 from model import CompletionRequest
-from action import completion_action
+from action.completion import completion_action
 
 router = APIRouter()
 

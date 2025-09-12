@@ -126,6 +126,7 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
             agent_dict = {
                 'name': agent.name,
                 'model': agent.model,
+                'is_enabled': agent.is_enabled,
                 'description': agent.description,
                 'instruction': agent.instruction,
                 'workflows': []

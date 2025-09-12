@@ -11,3 +11,17 @@ class CompletionRequest(BaseModel):
         ...,
         description="List of agent configurations to use for the completion"
     )
+    
+class ChunkContent(BaseModel):
+    type: str = Field(..., description="Type of the content", json_schema_extra={"json": "type"})
+    text: str = Field(..., description="Text content", json_schema_extra={"json": "text"})
+    agent: str = Field(..., description="Agent identifier", json_schema_extra={"json": "agent"})
+    index: float = Field(..., description="Index of the content", json_schema_extra={"json": "index"})
+    url: str = Field(..., description="URL associated with the content", json_schema_extra={"json": "url"})
+    
+class ResponseMetadata(BaseModel):
+    status: str = Field(..., description="Status of the response", json_schema_extra={"json": "status"})
+    
+class StreamingChunk(BaseModel):
+    content: list[ChunkContent] = Field([], description="List of content strings in the chunk")
+    response_metadata: ResponseMetadata = Field(..., description="Metadata about the response")

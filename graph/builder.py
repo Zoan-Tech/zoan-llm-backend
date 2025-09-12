@@ -17,6 +17,7 @@ from graph.tool import ToolBuilder
 from cache import GraphCache, DEFAULT_GRAPH_CACHE
 from prompt import BasePromptManager, DEFAULT_PROMPT_MANAGER
 from graph.memory import Memory, DEFAULT_MEMORY
+from graph.game_generator import DEFAULT_GAME_GENERATOR
 from langmem import create_manage_memory_tool, create_search_memory_tool
 
 from module.client import ModuleClient, DEFAULT_MODULE_CLIENT
@@ -43,8 +44,6 @@ class GraphBuilder:
     """
     PROMPT_AGENT_CONSTRUCTION = "Agent Construction"
     PROMPT_PRIMARY_AGENT_CONSTRUCTION = "Primary Agent Construction"
-    PROMPT_GAME_GENERATOR_CONSTRUCTION = "Game Generator"
-    GAME_GENERATOR = "Game Generator"
 
     def __init__(
         self,
@@ -136,21 +135,14 @@ class GraphBuilder:
         """
         if is_primary:
             current_avail_agents = kwargs.get("current_avail_agents", "No other agents available.")
-            prompt = self.prompt_manager.get_prompt(self.PROMPT_PRIMARY_AGENT_CONSTRUCTION)
+            prompt = self.prompt_manager.get_prompt(self.PROMPT_PRIMARY_AGENT_CONSTRUCTION, label="production")
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
             logger.debug(f"Current available agents for primary: {current_avail_agents}")
             compiled_prompt = prompt.compile(current_avail_agents=current_avail_agents)
             return compiled_prompt
-        elif agent_config.name == self.GAME_GENERATOR:
-            prompt = self.prompt_manager.get_prompt(self.PROMPT_GAME_GENERATOR_CONSTRUCTION)
-            if not prompt:
-                raise PromptNotFoundError(f"Prompt '{self.PROMPT_GAME_GENERATOR_CONSTRUCTION}' not found in Langfuse.")
-            
-            compiled_prompt = prompt.compile()
-            return compiled_prompt
         else:
-            prompt = self.prompt_manager.get_prompt(self.PROMPT_AGENT_CONSTRUCTION)
+            prompt = self.prompt_manager.get_prompt(self.PROMPT_AGENT_CONSTRUCTION, label="production")
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
             
@@ -182,9 +174,8 @@ class GraphBuilder:
         """
         Initialize the chat model based on the agent configuration.
         """
-        model = "gpt-4.1" if agent_config.name == self.GAME_GENERATOR else agent_config.model
         return init_chat_model(
-            model=model,
+            model=agent_config.model,
             use_responses_api=True,
             stream_usage=agent_config.stream_usage,
             api_key=agent_config.get_decrypted_api_key(),
@@ -205,16 +196,11 @@ class GraphBuilder:
         llm = self._construct_llm(agent_config)
 
         # Construct tools
-        tools = self._construct_agent_toolset(agent_config.workflows) if agent_config.name != self.GAME_GENERATOR else [
-            {
-                "type": "code_interpreter",
-                "container": {"type": "auto"},
-            }
-        ]
+        tools = self._construct_agent_toolset(agent_config.workflows)
 
         # Get prompt
         prompt = self._get_agent_construction_prompt(agent_config)
-
+        
         # Create the react agent
         return create_react_agent(llm, tools=tools, prompt=prompt, name=_sanitize_name(agent_config.name.lower()))
 
@@ -247,18 +233,29 @@ class GraphBuilder:
         _, current_avail_agents = self._current_avail_agents(agents)
         primary_prompt = self._get_agent_construction_prompt(primary_agent_config, is_primary=True, current_avail_agents=current_avail_agents)
         # Init primary tools with default memory tools
-        primary_tools = [
-            # Memory tools use LangGraph's BaseStore for persistence (4)
-            create_manage_memory_tool(namespace=("memories",)),
-            create_search_memory_tool(namespace=("memories",)),
-        ]
+        # TODO: Re-enable handoff tools when stable
+        # primary_tools = [
+        #     # Memory tools use LangGraph's BaseStore for persistence (4)
+        #     create_manage_memory_tool(namespace=("memories",)),
+        #     create_search_memory_tool(namespace=("memories",)),
+        # ]
+        primary_tools = None
 
         successfully_added = []
         
         for agent_config in agents:
+            if not agent_config.is_enabled:
+                logger.info(f"[GraphBuilder] Skipping disabled agent '{agent_config.name}'")
+                continue
             try:
-                agent = self.build_agent(agent_config)
-                successfully_added.append(agent)
+                if _sanitize_name(agent_config.name.lower()) == DEFAULT_GAME_GENERATOR.SANTIZED_NAME:
+                    logger.info(f"[GraphBuilder] Adding Game Generator agent '{agent_config.name}'")
+                    game_generator_agent = DEFAULT_GAME_GENERATOR.get_generator()
+                    successfully_added.append(game_generator_agent)
+                else:
+                    agent = self.build_agent(agent_config)
+                    successfully_added.append(agent)
+                    
                 # TODO: Re-enable handoff tools when stable
                 # primary_tools.append(
                 #     create_handoff_tool(
