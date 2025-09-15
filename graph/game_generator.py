@@ -2,6 +2,7 @@ from langgraph.prebuilt import create_react_agent
 from prompt import BasePromptManager, DEFAULT_PROMPT_MANAGER
 from action.minio_game_builder import MinioGameBuilder, DEFAULT_MINIO_GAME_BUILDER
 import os
+from utils.enums import *
 from config.logging import get_logger
 
 logger = get_logger()
@@ -18,7 +19,11 @@ class GameGenerator:
         self.prompt_manager = prompt_manager
         
     def get_game_generation_prompt(self, **kwargs) -> str:
-        prompt = self.prompt_manager.get_prompt(self.PROMPT_GAME_GENERATOR_CONSTRUCTION, label="production")
+        prompt = self.prompt_manager.get_prompt(
+            self.PROMPT_GAME_GENERATOR_CONSTRUCTION,
+            label=os.getenv(SecretEnum.LANGFUSE_PROMPT_LABEL.value),
+            version=os.getenv(SecretEnum.LANGFUSE_VERSION_ID.value),
+        )
         compiled_prompt = prompt.compile(**kwargs)
         return compiled_prompt
     

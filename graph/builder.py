@@ -1,3 +1,5 @@
+from datetime import datetime
+import os
 from typing import Any, Dict, Optional, Tuple
 from langfuse import observe
 
@@ -135,14 +137,25 @@ class GraphBuilder:
         """
         if is_primary:
             current_avail_agents = kwargs.get("current_avail_agents", "No other agents available.")
-            prompt = self.prompt_manager.get_prompt(self.PROMPT_PRIMARY_AGENT_CONSTRUCTION, label="production")
+            prompt = self.prompt_manager.get_prompt(
+                self.PROMPT_PRIMARY_AGENT_CONSTRUCTION,
+                label=os.getenv(SecretEnum.LANGFUSE_PROMPT_LABEL.value),
+                version=os.getenv(SecretEnum.LANGFUSE_VERSION_ID.value),
+            )
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
             logger.debug(f"Current available agents for primary: {current_avail_agents}")
-            compiled_prompt = prompt.compile(current_avail_agents=current_avail_agents)
+            compiled_prompt = prompt.compile(
+                current_avail_agents=current_avail_agents,
+                current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
             return compiled_prompt
         else:
-            prompt = self.prompt_manager.get_prompt(self.PROMPT_AGENT_CONSTRUCTION, label="production")
+            prompt = self.prompt_manager.get_prompt(
+                self.PROMPT_AGENT_CONSTRUCTION,
+                label=os.getenv(SecretEnum.LANGFUSE_PROMPT_LABEL.value),
+                version=os.getenv(SecretEnum.LANGFUSE_VERSION_ID.value),
+            )
             if not prompt:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
             

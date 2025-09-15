@@ -1,6 +1,8 @@
+import os
 import logging
 import logging.config
 from uvicorn.config import LOGGING_CONFIG
+from utils.enums import SecretEnum
 
 def setup_logging():
 	"""
@@ -13,5 +15,5 @@ def get_logger() -> logging.Logger:
 	"""
 	Get the application logger.
 	"""
-	# LOGGING_CONFIG["loggers"]["uvicorn"]["level"] = "DEBUG"
+	LOGGING_CONFIG["loggers"]["uvicorn"]["level"] = os.getenv(SecretEnum.LOG_LEVEL.value, "INFO")
 	return logging.getLogger("uvicorn")
