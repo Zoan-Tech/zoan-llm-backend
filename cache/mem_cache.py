@@ -125,7 +125,7 @@ class MemCache(Generic[K, T], ABC):
             else:
                 # Remove expired entry
                 del self._cache[cache_key]
-                print(f"{self.cache_name}: Expired entry removed for key: {cache_key}")
+                logger.debug(f"{self.cache_name}: Expired entry removed for key: {cache_key}")
         
         return None
 
@@ -138,7 +138,7 @@ class MemCache(Generic[K, T], ABC):
         """
         current_time = time.time()
         self._cache[cache_key] = (item, current_time)
-        print(f"{self.cache_name}: Item cached with key: {cache_key}")
+        logger.debug(f"{self.cache_name}: Item cached with key: {cache_key}")
 
     def remove(self, cache_key: K) -> bool:
         """
@@ -149,7 +149,7 @@ class MemCache(Generic[K, T], ABC):
         """
         if cache_key in self._cache:
             del self._cache[cache_key]
-            print(f"{self.cache_name}: Removed entry with key: {cache_key}")
+            logger.debug(f"{self.cache_name}: Removed entry with key: {cache_key}")
             return True
         return False
 
@@ -158,7 +158,7 @@ class MemCache(Generic[K, T], ABC):
         Clear all entries from the cache.
         """
         self._cache.clear()
-        print(f"{self.cache_name}: All cache entries cleared")
+        logger.debug(f"{self.cache_name}: All cache entries cleared")
 
     def force_cleanup(self) -> int:
         """

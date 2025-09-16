@@ -92,8 +92,6 @@ def exception_handler(
                 # Decide whether to reraise or return default
                 if reraise:
                     if custom_exception:
-                        import traceback
-                        traceback.print_exc()  # Log the traceback for debugging
                         raise custom_exception(error_msg) from e
                     else:
                         raise
