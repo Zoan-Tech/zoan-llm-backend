@@ -59,7 +59,7 @@ class MemCache(Generic[K, T], ABC):
             del self._cache[key]
         
         if removed_count > 0:
-            logger.info(f"[MemCache] Cleaned up {removed_count} expired cache entries")
+            logger.debug(f"[MemCache] Cleaned up {removed_count} expired cache entries")
         
         return removed_count
 

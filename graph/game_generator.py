@@ -1,12 +1,10 @@
 from langgraph.prebuilt import create_react_agent
 from prompt import BasePromptManager, DEFAULT_PROMPT_MANAGER
-from action.minio_game_builder import MinioGameBuilder, DEFAULT_MINIO_GAME_BUILDER
 import os
 from utils.enums import *
 from config.logging import get_logger
 
 logger = get_logger()
-game_builder: MinioGameBuilder = DEFAULT_MINIO_GAME_BUILDER
     
 class GameGenerator:
     PROMPT_GAME_GENERATOR_CONSTRUCTION = "Game Generator"

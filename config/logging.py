@@ -8,6 +8,7 @@ def setup_logging():
 	"""
 	Setup logging configuration for the application.
 	"""
+	LOGGING_CONFIG["loggers"]["uvicorn"]["level"] = os.getenv(SecretEnum.LOG_LEVEL.value, "INFO")
 	logging_config = LOGGING_CONFIG.copy()
 	logging.config.dictConfig(logging_config)
 
@@ -15,5 +16,4 @@ def get_logger() -> logging.Logger:
 	"""
 	Get the application logger.
 	"""
-	LOGGING_CONFIG["loggers"]["uvicorn"]["level"] = os.getenv(SecretEnum.LOG_LEVEL.value, "INFO")
 	return logging.getLogger("uvicorn")

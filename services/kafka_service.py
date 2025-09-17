@@ -6,28 +6,19 @@ from config.logging import get_logger
 from confluent_kafka import Producer, Consumer, KafkaException
 from threading import Thread, Event
 from typing import Callable, Optional, Dict, Any
+from utils.enums import *
 
 logger = get_logger()
 
-class KafkaClient:
+class KafkaProducer:
     def __init__(
         self,
-        bootstrap_servers: str = None,
-        group_id: str = None,   
-        topics: list[str] = None,
+        bootstrap_servers: str = os.getenv(SecretEnum.KAFKA_BOOTSTRAP_SERVERS.value),
         *,
-        enable_auto_commit: bool = False,
-        auto_offset_reset: str = "earliest",
-        enable_auto_offset_store: bool = False,
         extra_producer_conf: Optional[Dict[str, Any]] = None,
-        extra_consumer_conf: Optional[Dict[str, Any]] = None,
-        asyncio_loop: asyncio.AbstractEventLoop | None = None,
     ):
-        self.topics = topics or [os.getenv("KAFKA_TOPIC_REQUEST")]
-        self._stop = Event()
-
         pconf = {
-            "bootstrap.servers": bootstrap_servers or os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
+            "bootstrap.servers": bootstrap_servers,
             "enable.idempotence": True,          # safe/ordered produce
             "linger.ms": 5,                      # Small batch delay for better throughput
             "batch.size": 16384,                 # 16KB batch size
@@ -39,28 +30,6 @@ class KafkaClient:
         if extra_producer_conf:
             pconf.update(extra_producer_conf)
         self.producer = Producer(pconf)
-
-        cconf = {
-            "bootstrap.servers": bootstrap_servers or os.getenv("KAFKA_BOOTSTRAP_SERVERS"),
-            "group.id": group_id or os.getenv("KAFKA_GROUP_ID"),
-            "auto.offset.reset": auto_offset_reset,
-            "enable.auto.commit": enable_auto_commit,
-            "enable.auto.offset.store": enable_auto_offset_store,
-            "max.poll.interval.ms": 300000,
-            "session.timeout.ms": 30000,         # Faster session timeout
-            "heartbeat.interval.ms": 10000,      # More frequent heartbeats
-            "fetch.min.bytes": 1,                # Don't wait for large batches
-            "fetch.wait.max.ms": 100,            # Small wait time for low latency
-        }
-
-        if extra_consumer_conf:
-            cconf.update(extra_consumer_conf)
-
-        self.consumer = Consumer(cconf)
-
-        self._thread: Optional[Thread] = None
-        self._on_message: Optional[Callable[..., bool]] = None  # return True to commit
-        self._asyncio_loop = asyncio_loop
 
     # ---------- Producer ----------
     def _delivery_report(self, err, msg):
@@ -116,6 +85,48 @@ class KafkaClient:
             logger.warning(f"Failed to get producer metrics: {e}")
             return {"queue_size": len(self.producer), "error": str(e)}
 
+    def close(self):
+        """Close producer and flush remaining messages"""
+        self.flush()
+
+
+class KafkaConsumer:
+    def __init__(
+        self,
+        bootstrap_servers: str = os.getenv(SecretEnum.KAFKA_BOOTSTRAP_SERVERS.value),
+        group_id: str = os.getenv(SecretEnum.KAFKA_GROUP_ID.value),   
+        consumer_topics: list[str] = None,
+        *,
+        enable_auto_commit: bool = False,
+        auto_offset_reset: str = "earliest",
+        enable_auto_offset_store: bool = False,
+        extra_consumer_conf: Optional[Dict[str, Any]] = None,
+        asyncio_loop: asyncio.AbstractEventLoop | None = None,
+    ):
+        self.consumer_topics = consumer_topics or []
+        self._stop = Event()
+        
+        cconf = {
+            "bootstrap.servers": bootstrap_servers,
+            "group.id": group_id,
+            "auto.offset.reset": auto_offset_reset,
+            "enable.auto.commit": enable_auto_commit,
+            "enable.auto.offset.store": enable_auto_offset_store,
+            "max.poll.interval.ms": 300000,
+            "session.timeout.ms": 30000,         # Faster session timeout
+            "heartbeat.interval.ms": 10000,      # More frequent heartbeats
+            "fetch.min.bytes": 1,                # Don't wait for large batches
+            "fetch.wait.max.ms": 100,            # Small wait time for low latency
+        }
+
+        if extra_consumer_conf:
+            cconf.update(extra_consumer_conf)
+
+        self.consumer = Consumer(cconf)
+        self._thread: Optional[Thread] = None
+        self._on_message: Optional[Callable[..., bool]] = None  # return True to commit
+        self._asyncio_loop = asyncio_loop
+
     # ---------- Consumer ----------
     def start_consumer(
         self,
@@ -130,10 +141,10 @@ class KafkaClient:
             raise RuntimeError("Consumer already running")
 
         self._on_message = on_message
-        self.consumer.subscribe(self.topics)
+        self.consumer.subscribe(self.consumer_topics)
 
         def _loop():
-            logger.info("[KafkaClient] Consumer started, subscribed to %s", self.topics)
+            logger.debug("[KafkaClient] Consumer started, subscribed to %s", self.consumer_topics)
             try:
                 while not self._stop.is_set():
                     msg = self.consumer.poll(poll_timeout)
@@ -183,7 +194,7 @@ class KafkaClient:
                     self.consumer.close()
                 except Exception:
                     pass
-                logger.info("[KafkaClient] Consumer stopped")
+                logger.debug("[KafkaClient] Consumer stopped")
 
         self._stop.clear()
         self._thread = Thread(target=_loop, daemon=True)
@@ -194,7 +205,6 @@ class KafkaClient:
         if self._thread:
             self._thread.join(timeout=5)
 
-    # ---------- Teardown ----------
     def close(self):
+        """Close consumer and stop background thread"""
         self.stop_consumer()
-        self.flush()

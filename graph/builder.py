@@ -258,11 +258,11 @@ class GraphBuilder:
         
         for agent_config in agents:
             if not agent_config.is_enabled:
-                logger.info(f"[GraphBuilder] Skipping disabled agent '{agent_config.name}'")
+                logger.debug(f"[GraphBuilder] Skipping disabled agent '{agent_config.name}'")
                 continue
             try:
                 if _sanitize_name(agent_config.name.lower()) == DEFAULT_GAME_GENERATOR.SANTIZED_NAME:
-                    logger.info(f"[GraphBuilder] Adding Game Generator agent '{agent_config.name}'")
+                    logger.debug(f"[GraphBuilder] Adding Game Generator agent '{agent_config.name}'")
                     game_generator_agent = DEFAULT_GAME_GENERATOR.get_generator()
                     successfully_added.append(game_generator_agent)
                 else:

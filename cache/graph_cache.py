@@ -179,10 +179,10 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
         self._update_agent_registry(agents, config_hash, is_new=is_new_compilation)
         
         if existing_graph:
-            logger.info(f"[GraphCache] Cache HIT for config hash: {config_hash}")
+            logger.debug(f"[GraphCache] Cache HIT for config hash: {config_hash}")
             return existing_graph
         else:
-            logger.info(f"[GraphCache] Cache MISS for config hash: {config_hash}, creating new graph")
+            logger.debug(f"[GraphCache] Cache MISS for config hash: {config_hash}, creating new graph")
         
         # Use the base MemCache functionality to get or create
         return self.get_or_create(agents, graph_factory_func=graph_factory_func)
@@ -191,7 +191,7 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
         """
         Clear all cached compiled graphs and agent registry.
         """
-        logger.info("[GraphCache] Cleared all caches including agent registry")
+        logger.debug("[GraphCache] Cleared all caches including agent registry")
         # Use base class method for main cache
         self.clear()
         # Clear agent registry
@@ -203,7 +203,7 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
         
         :return: Number of expired entries removed.
         """
-        logger.info(f"[GraphCache] Cleanup removed {total_removed} entries (main: {main_cache_removed}, registry: {registry_removed})")
+        logger.debug(f"[GraphCache] Cleanup removed {total_removed} entries (main: {main_cache_removed}, registry: {registry_removed})")
         
         # Clean up main cache using base class method
         main_cache_removed = self.force_cleanup()
