@@ -4,7 +4,7 @@ from typing import Dict
 from action.completion import completion_action
 from config.logging import get_logger
 from model.completion import CompletionRequest
-from handler.consumer.base import BaseMessageHandler
+from handler.kafka_consumer.base import BaseMessageHandler
 from utils.enums import *
 
 logger = get_logger()

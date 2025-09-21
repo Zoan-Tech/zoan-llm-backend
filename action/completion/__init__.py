@@ -13,7 +13,7 @@ from model import (
 from graph.builder import GraphBuilder
 from services.kafka_service import KafkaProducer
 from utils.enums import *
-from action.minio_processor.games import DEFAULT_GAMES_PROCESSOR
+from action.completion.game_processor import Processor as GameProcessor
 
 # Constants and Configuration
 logger = get_logger()
@@ -40,7 +40,7 @@ class CompletionAction:
             DEFAULT_KAFKA_TOPIC_COMPLETION_RESPONSE
         )
         self.graph_builder = GraphBuilder()
-        self.minio_builder = DEFAULT_GAMES_PROCESSOR
+        self.game_processor = GameProcessor()
         self.kafka_producer = KafkaProducer()
 
     def _send_error_message(self, conversation_id: str, error_message: str) -> None:
@@ -181,7 +181,7 @@ class CompletionAction:
     async def _build_game_files(self, container_id: str, conversation_id: str) -> None:
         """Build game files if container ID is available."""
         try:
-            minio_prefix = await self.minio_builder.build_openai_game_file(
+            minio_prefix = await self.game_processor.build_openai_game_file(
                 container_id, 
                 thread_id=conversation_id
             )

@@ -11,14 +11,13 @@ from utils.enums import *
 logger = get_logger()
 
 DEFAULT_GAME_BUCKET = "games"
-class Processor(MinioService):
-    openai_client = AsyncOpenAI()
-    
+class Processor:
     def __init__(self, minio_config: Optional[MinioConfig] = None):
         if minio_config is None:
             minio_config = MinioConfig(bucket=DEFAULT_GAME_BUCKET)
-        super().__init__(minio_config)
+        self.minio_client = MinioService(minio_config).client
         self.bucket = minio_config.bucket
+        self.openai_client = AsyncOpenAI()
     
     async def _get_container_zip_file(self, container_id: str) -> Optional[str]:
         """Get zip files from OpenAI container"""
@@ -76,7 +75,7 @@ class Processor(MinioService):
                         
                         # Upload file content directly to MinIO
                         file_stream = BytesIO(file_content)
-                        self.client.put_object(
+                        self.minio_client.put_object(
                             self.bucket,
                             object_name,
                             file_stream,
@@ -108,5 +107,7 @@ class Processor(MinioService):
         except Exception as e:
             logger.error(f"[MinioProcessor] Games Bucket: Error building game files from container {container_id}: {e}")
             raise
-        
+
+
+# Global instance with automatic shutdown registration
 DEFAULT_GAMES_PROCESSOR = Processor()
