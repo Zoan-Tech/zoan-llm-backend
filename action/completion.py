@@ -2,6 +2,8 @@ import os
 from config.logging import get_logger
 from typing import Dict, Any, List, Tuple, Optional
 
+from langgraph.graph.state import CompiledStateGraph
+
 from langfuse import observe
 
 from model import (
@@ -159,7 +161,7 @@ class CompletionAction:
 
     async def _process_graph_stream(
         self, 
-        compiled_graph, 
+        compiled_graph: CompiledStateGraph, 
         input_data: Dict[str, Any], 
         config: Dict[str, Any], 
         conversation_id: str

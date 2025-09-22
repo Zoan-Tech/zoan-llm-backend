@@ -10,13 +10,14 @@ from utils.enums import *
 
 logger = get_logger()
 
-DEFAULT_GAME_BUCKET = "games"
+DEFAULT_GAMES_BUCKET = "games"
 class Processor(MinioService):
     openai_client = AsyncOpenAI()
     
     def __init__(self, minio_config: Optional[MinioConfig] = None):
         if minio_config is None:
-            minio_config = MinioConfig(bucket=DEFAULT_GAME_BUCKET)
+            bucket = os.getenv(SecretEnum.MINIO_GAMES_BUCKET.value, DEFAULT_GAMES_BUCKET)
+            minio_config = MinioConfig(bucket=bucket)
         super().__init__(minio_config)
         self.bucket = minio_config.bucket
     
@@ -99,8 +100,7 @@ class Processor(MinioService):
                 raise Exception(f"No zip files found in container {container_id}")
 
             zip_content = await self._download_file_from_openai(container_id, zip_file_id)
-            game_version = uuid.uuid4()
-            minio_prefix = f"{thread_id}/{game_version}"
+            minio_prefix = f"{thread_id}/{zip_file_id}"
             await self._extract_and_upload_to_minio(zip_content, minio_prefix)
             
             return minio_prefix
