@@ -173,10 +173,8 @@ class GraphBuilder:
         if not agent_config.model:
             raise AgentConfigurationError("Model name is required")
         
-        # Validate that we can get the API key
-        decrypted_key = agent_config.get_decrypted_api_key()
-        if not decrypted_key:
-            raise AgentConfigurationError("Failed to decrypt API key or key is empty")
+        # Ensure API key is set for the model provider
+        self._ensure_provider_api_key(agent_config)
             
         # Validate workflows have steps
         for workflow in agent_config.workflows:
@@ -191,10 +189,32 @@ class GraphBuilder:
             model=agent_config.model,
             use_responses_api=True,
             stream_usage=agent_config.stream_usage,
-            api_key=agent_config.get_decrypted_api_key(),
             timeout=120,
             **agent_config.model_kwargs.model_dump(exclude_none=True)
         )
+    
+    def _ensure_provider_api_key(self, agent_config: AgentConfig) -> None:
+        """Ensure the API key for the model provider is set in environment variables."""
+        # Currently only OpenAI is supported
+        if ( agent_config.model.startswith("openai:")
+            or agent_config.model.startswith("gpt-")
+            or agent_config.model.startswith("text-")
+        ):
+            if not os.getenv(SecretEnum.OPENAI_API_KEY.value):
+                raise AgentConfigurationError("OPENAI_API_KEY environment variable is not set")
+        elif ( agent_config.model.startswith("anthropic:")
+            or agent_config.model.startswith("claude-")
+        ):
+            if not os.getenv(SecretEnum.ANTHROPIC_API_KEY.value):
+                raise AgentConfigurationError("ANTHROPIC_API_KEY environment variable is not set")
+        elif ( agent_config.model.startswith("deepseek:")
+        ):
+            if not os.getenv(SecretEnum.DEEPSEEK_API_KEY.value):
+                raise AgentConfigurationError("DEEPSEEK_API_KEY environment variable is not set")
+        elif ( agent_config.model.startswith("gemini:")
+        ):
+            if not os.getenv(SecretEnum.GEMINI_API_KEY.value):
+                raise AgentConfigurationError("GEMINI_API_KEY environment variable is not set") 
 
     @observe(name="build_agent")
     @graph_builder_exception_handler("Failed to build agent")
