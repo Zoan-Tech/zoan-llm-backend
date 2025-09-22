@@ -38,8 +38,6 @@ class AgentConfig(BaseModel):
     
     model: str = Field(..., description="Model name")
     model_kwargs: ModelKwargs = Field(default_factory=ModelKwargs, description="Additional model configuration")
-    
-    api_key: SecretStr = Field(..., description="API key for the model")
 
     description: Optional[str] = Field(None, description="Description of the agent")
     instruction: Optional[str] = Field(None, description="Instruction for the agent")
@@ -49,14 +47,4 @@ class AgentConfig(BaseModel):
 
     workflows: list[AgentWorkflow] = Field(..., description="List of agent workflows")
     
-    stream_usage: bool = Field(True, description="Whether to stream usage")    
-    def get_decrypted_api_key(self) -> str:
-        """Decrypt the API key using the Fernet secret."""
-        try:
-            encrypted = self.api_key.get_secret_value()
-            fernet_secret = os.environ.get(SecretEnum.FERNET_SECRET.value)
-            if not fernet_secret:
-                raise ValueError("FERNET_SECRET environment variable is not set")
-            return decrypt_token(encrypted, fernet_secret)
-        except Exception as e:
-            raise ValueError(f"Failed to decrypt API key: {e}") from e
+    stream_usage: bool = Field(True, description="Whether to stream usage")
