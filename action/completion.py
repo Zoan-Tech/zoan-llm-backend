@@ -55,7 +55,10 @@ class CompletionAction:
                     "text": f"Error during processing: {error_message}",
                     "agent": PRIMARY_AGENT
                 }
-            ]
+            ],
+            "response_metadata": {
+                "status": FINISHED_STATUS
+            }
         }
         self.kafka_producer.produce(
             topic=self.kafka_topic_response,
@@ -190,9 +193,6 @@ class CompletionAction:
     async def _build_game_files(self, container_id: str, conversation_id: str, annotation: dict) -> None:
         """Build game files if container ID is available."""
         try:
-            if not container_id:
-                raise ValueError("No container ID provided for building game files.")
-            
             logger.info(f"Building game files for container {container_id} in conversation {conversation_id}")
             minio_prefix = await self.minio_builder.build_openai_game_file(
                 container_id, 
@@ -248,7 +248,8 @@ class CompletionAction:
             
             # Build game files if container ID is available
             container_id = annotation.get("container_id")
-            await self._build_game_files(container_id, conversation_id, annotation)
+            if container_id:
+                await self._build_game_files(container_id, conversation_id, annotation)
             
             # Send final completion chunk
             self._send_final_chunk(last_chunk, conversation_id)

@@ -21,11 +21,41 @@ class Processor(MinioService):
         super().__init__(minio_config)
         self.bucket = minio_config.bucket
     
-    async def _get_container_zip_file(self, container_id: str) -> Optional[str]:
-        """Get zip files from OpenAI container"""
+    async def _count_folders_in_thread(self, thread_id: str) -> int:
+        """Count number of folders in games/thread_id"""
+        try:
+            logger.debug(f"[MinioProcessor] Games Bucket: Counting folders in {thread_id}")
+            prefix = f"{thread_id}/"
+            objects = self.client.list_objects(self.bucket, prefix=prefix, recursive=False)
+            
+            folder_count = 0
+            for obj in objects:
+                # Check if it's a folder (ends with /)
+                if obj.object_name.endswith('/') and obj.object_name != prefix:
+                    folder_count += 1
+            
+            logger.debug(f"[MinioProcessor] Games Bucket: Found {folder_count} folders in {thread_id}")
+            return folder_count
+        except Exception as e:
+            logger.error(f"[MinioProcessor] Games Bucket: Failed to count folders in {thread_id}: {e}")
+            return 0
+    
+    async def _get_container_zip_file(self, container_id: str, thread_id: str) -> Optional[str]:
+        """Get zip files from OpenAI container with constraint check"""
         try:
             logger.debug(f"[MinioProcessor] Games Bucket: Listing files in container {container_id}")
             response = await self.openai_client.containers.files.list(container_id=container_id, order='desc')
+            
+            # Count total files in OpenAI container
+            total_openai_files = len([file for file in response.data if file.path.endswith('.zip')])
+            logger.debug(f"[MinioProcessor] Games Bucket: Total OpenAI files: {total_openai_files}")
+            
+            # Check constraint: if thread_id provided, compare folder count with total OpenAI files
+            folder_count = await self._count_folders_in_thread(thread_id)
+            if folder_count >= total_openai_files:
+                logger.info(f"[MinioProcessor] No new game version to upload.")
+                return None
+            
             zip_file_id = None
             for file in response.data:
                 if file.path.endswith('.zip'):
@@ -114,16 +144,13 @@ class Processor(MinioService):
         """Build game files from OpenAI container"""
         logger.debug(f"[MinioProcessor] Games Bucket: Building game files for thread {thread_id} - {container_id}")
         try:
-            if not container_id:
+            zip_file_id = await self._get_container_zip_file(container_id, thread_id)
+            if not zip_file_id:
                 zip_content = self._fallback_build_openai_game_file(thread_id, annotation)
                 if not zip_content:
                     raise Exception("No container ID provided for building game files.")
                 minio_prefix = f"{thread_id}/{uuid.uuid4()}"
             else:
-                zip_file_id = await self._get_container_zip_file(container_id)
-                if not zip_file_id:
-                    raise Exception(f"No zip files found in container {container_id}")
-
                 zip_content = await self._download_file_from_openai(container_id, zip_file_id)
                 minio_prefix = f"{thread_id}/{zip_file_id}"
                 
