@@ -55,7 +55,10 @@ class CompletionAction:
                     "text": f"Error during processing: {error_message}",
                     "agent": PRIMARY_AGENT
                 }
-            ]
+            ],
+            "response_metadata": {
+                "status": FINISHED_STATUS
+            }
         }
         self.kafka_producer.produce(
             topic=self.kafka_topic_response,
@@ -130,6 +133,13 @@ class CompletionAction:
             for ann in message["annotations"]:
                 if "container_id" in ann:
                     annotation.update(ann)
+                    
+        if chunk.additional_kwargs.get("tool_outputs"):
+            for tool_output in chunk.additional_kwargs["tool_outputs"]:
+                if tool_output.get("type") == "code_interpreter_call":
+                    annotation.update({
+                        "code": tool_output.get("code", "")
+                    })
 
     def _process_chunk(self, agent_name: str, chunk, annotation: Dict[str, Any]) -> StreamingChunk:
         """Process chunk content and extract annotations."""
@@ -180,12 +190,14 @@ class CompletionAction:
         
         return last_chunk, annotation
 
-    async def _build_game_files(self, container_id: str, conversation_id: str) -> None:
+    async def _build_game_files(self, container_id: str, conversation_id: str, annotation: dict) -> None:
         """Build game files if container ID is available."""
         try:
+            logger.info(f"Building game files for container {container_id} in conversation {conversation_id}")
             minio_prefix = await self.minio_builder.build_openai_game_file(
                 container_id, 
-                thread_id=conversation_id
+                thread_id=conversation_id,
+                annotation=annotation   
             )
             
             chunk_content = ChunkContent(
@@ -193,7 +205,7 @@ class CompletionAction:
                 text="",
                 agent=PRIMARY_AGENT,
                 index=0,
-                url=f"builds/{minio_prefix}/index.html",
+                url=f"{minio_prefix}/index.html",
                 game_version=str(minio_prefix.split('/')[-1])
             )
             
@@ -237,7 +249,7 @@ class CompletionAction:
             # Build game files if container ID is available
             container_id = annotation.get("container_id")
             if container_id:
-                await self._build_game_files(container_id, conversation_id)
+                await self._build_game_files(container_id, conversation_id, annotation)
             
             # Send final completion chunk
             self._send_final_chunk(last_chunk, conversation_id)
