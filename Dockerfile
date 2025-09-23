@@ -34,7 +34,11 @@ USER appuser
 
 # Create necessary directories
 RUN mkdir -p /app/games
+RUN mkdir -p /app/data
+
+# Set permissions for the directories
 RUN chown -R appuser:appuser /app/games
+RUN chown -R appuser:appuser /app/data
 
 # Expose port
 EXPOSE 8000
