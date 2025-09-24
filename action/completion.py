@@ -140,6 +140,10 @@ class CompletionAction:
                     annotation.update({
                         "code": tool_output.get("code", "")
                     })
+                    if annotation.get("container_id") is None and tool_output.get("container_id"):
+                        annotation.update({
+                            "container_id": tool_output.get("container_id")
+                        })
 
     def _process_chunk(self, agent_name: str, chunk, annotation: Dict[str, Any]) -> StreamingChunk:
         """Process chunk content and extract annotations."""
