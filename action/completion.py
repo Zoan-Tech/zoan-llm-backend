@@ -248,7 +248,7 @@ class CompletionAction:
             
             # Build game files if container ID is available
             container_id = annotation.get("container_id")
-            if container_id:
+            if container_id or annotation.get("code"):
                 await self._build_game_files(container_id, conversation_id, annotation)
             
             # Send final completion chunk

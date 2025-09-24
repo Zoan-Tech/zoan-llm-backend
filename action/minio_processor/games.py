@@ -65,7 +65,7 @@ class Processor(MinioService):
             return zip_file_id
         except Exception as e:
             logger.error(f"[MinioProcessor] Games Bucket: Failed to list container files for {container_id}: {e}")
-            raise
+            return None
     
     async def _download_file_from_openai(self, container_id: str, file_id: str) -> bytes:
         """Download file content from OpenAI Files API"""
