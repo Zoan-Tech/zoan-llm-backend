@@ -65,7 +65,7 @@ class Processor(MinioService):
             return zip_file_id
         except Exception as e:
             logger.error(f"[MinioProcessor] Games Bucket: Failed to list container files for {container_id}: {e}")
-            raise
+            return None
     
     async def _download_file_from_openai(self, container_id: str, file_id: str) -> bytes:
         """Download file content from OpenAI Files API"""
@@ -129,7 +129,7 @@ class Processor(MinioService):
         """Fallback method to build game file path from annotation"""
         code = annotation.get("code", "")
         if code:
-            code = code.replace("/mnt/data/", "data/{thread_id}/".format(thread_id=thread_id))
+            code = code.replace("/mnt/data", "data/{thread_id}".format(thread_id=thread_id))
             exec(code, globals())
             data_path = f"data/{thread_id}"
             zip_file = None
