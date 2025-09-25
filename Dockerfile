@@ -24,20 +24,22 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
-COPY . .
-
 # Create non-root user for security
-RUN adduser --disabled-password --gecos '' appuser \
-    && chown -R appuser:appuser /app
-USER appuser
+RUN adduser --disabled-password --gecos '' appuser
 
-# Create necessary directories
+# Create necessary directories with proper permissions as root
 RUN mkdir -p /app/games /app/data
 
-# Set permissions for the directories
-RUN chown -R appuser:appuser /app/games
-RUN chown -R appuser:appuser /app/data
+# Copy project files and set ownership
+COPY --chown=appuser:appuser . .
+
+# Set proper permissions for all directories and files
+RUN chown -R appuser:appuser /app \
+    && chmod -R 755 /app \
+    && chmod -R 775 /app/games /app/data
+
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8000
