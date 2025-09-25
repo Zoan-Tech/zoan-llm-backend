@@ -16,6 +16,7 @@ services:
     volumes:
       - .:/app
       - ./games:/app/games
+      - ./data:/app/data
     restart: unless-stopped
     mem_limit: 2g
     cpus: 1.0

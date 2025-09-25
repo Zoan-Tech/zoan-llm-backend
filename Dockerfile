@@ -33,8 +33,7 @@ RUN adduser --disabled-password --gecos '' appuser \
 USER appuser
 
 # Create necessary directories
-RUN mkdir -p /app/games
-RUN mkdir -p /app/data
+RUN mkdir -p /app/games /app/data
 
 # Set permissions for the directories
 RUN chown -R appuser:appuser /app/games
