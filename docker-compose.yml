@@ -14,9 +14,9 @@ services:
       - POSTGRES_CONN_STRING=${POSTGRES_CONN_STRING}
       - FERNET_SECRET=${FERNET_SECRET}
     volumes:
-      - .:/app
-      - ./games:/app/games
-      - ./data:/app/data
+      # Use named volumes to avoid permission issues
+      - ./games:/app/games:rw
+      - ./data:/app/data:rw
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - zoan-network

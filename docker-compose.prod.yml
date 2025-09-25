@@ -14,9 +14,9 @@ services:
       - POSTGRES_CONN_STRING=${POSTGRES_CONN_STRING}
       - FERNET_SECRET=${FERNET_SECRET}
     volumes:
-      - .:/app
-      - ./games:/app/games
-      - ./data:/app/data
+      # Use named volumes to avoid permission issues
+      - ./games:/app/games:rw
+      - ./data:/app/data:rw
     restart: unless-stopped
     mem_limit: 2g
     cpus: 1.0
