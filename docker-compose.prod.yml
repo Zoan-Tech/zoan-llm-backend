@@ -15,13 +15,17 @@ services:
       - FERNET_SECRET=${FERNET_SECRET}
     volumes:
       # Use named volumes to avoid permission issues
-      - ./games:/app/games:rw
-      - ./data:/app/data:rw
+      - games:/app/games
+      - data:/app/data
     restart: unless-stopped
     mem_limit: 2g
     cpus: 1.0
     networks:
       - zoan-network
+
+volumes:
+  games:
+  data:
 
 networks:
   zoan-network:
