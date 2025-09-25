@@ -48,12 +48,13 @@ class CompletionAction:
     def _send_error_message(self, conversation_id: str, error_message: str) -> None:
         """Send error message to Kafka topic."""
         error_object = {
-            "type": "error",
             "content": [
                 {
                     "type": "text",
                     "text": f"Error during processing: {error_message}",
-                    "agent": PRIMARY_AGENT
+                    "agent": PRIMARY_AGENT,
+                    "index": 0,
+                    "url": "",
                 }
             ],
             "response_metadata": {
@@ -123,17 +124,16 @@ class CompletionAction:
 
     def _extract_annotations(self, chunk, annotation: Dict[str, Any]) -> None:
         """Extract annotations from chunk content (modifies annotation dict in-place)."""
-        if not isinstance(chunk.content, list) or not chunk.content:
-            return
-            
-        for message in chunk.content:
-            if not isinstance(message, dict) or "annotations" not in message:
-                continue
-                
-            for ann in message["annotations"]:
-                if "container_id" in ann:
-                    annotation.update(ann)
+        logger.debug(f"Extracted annotations from chunk: {chunk}")
+        if type(chunk.content) is list:    
+            for message in chunk.content:
+                if not isinstance(message, dict) or "annotations" not in message:
+                    continue
                     
+                for ann in message["annotations"]:
+                    if "container_id" in ann:
+                        annotation.update(ann)
+        
         if chunk.additional_kwargs.get("tool_outputs"):
             for tool_output in chunk.additional_kwargs["tool_outputs"]:
                 if tool_output.get("type") == "code_interpreter_call":
@@ -186,7 +186,6 @@ class CompletionAction:
         
         for agent, chunk in compiled_graph.stream(input_data, config=config, stream_mode="messages", subgraphs=True):                    
             agent_name = self._extract_agent_name(agent)
-            logger.debug("Chunks received from agent %s: %s", agent_name, chunk)
                 
             streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
             self._send_streaming_chunk(conversation_id, streaming_chunk)
