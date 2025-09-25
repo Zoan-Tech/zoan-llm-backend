@@ -133,17 +133,14 @@ class CompletionAction:
                 for ann in message["annotations"]:
                     if "container_id" in ann:
                         annotation.update(ann)
-        
+                        
         if chunk.additional_kwargs.get("tool_outputs"):
             for tool_output in chunk.additional_kwargs["tool_outputs"]:
                 if tool_output.get("type") == "code_interpreter_call":
-                    annotation.update({
-                        "code": tool_output.get("code", "")
-                    })
-                    if annotation.get("container_id") is None and tool_output.get("container_id"):
-                        annotation.update({
-                            "container_id": tool_output.get("container_id")
-                        })
+                    annotation["app"]["latest"] = {
+                        "code": tool_output.get("code"),
+                        "container_id": tool_output.get("container_id")
+                    }
 
     def _process_chunk(self, agent_name: str, chunk, annotation: Dict[str, Any]) -> StreamingChunk:
         """Process chunk content and extract annotations."""
@@ -182,6 +179,7 @@ class CompletionAction:
     ) -> Tuple[Optional[StreamingChunk], Dict[str, Any]]:
         """Process the graph stream and return last chunk and annotations."""
         annotation = {}
+        annotation["app"] = {}
         last_chunk = None
         
         for agent, chunk in compiled_graph.stream(input_data, config=config, stream_mode="messages", subgraphs=True):                    
@@ -192,11 +190,29 @@ class CompletionAction:
             last_chunk = streaming_chunk
         
         return last_chunk, annotation
+    
+    def _extract_app_versions(self, annotation: Dict[str, Any], config: dict) -> None:
+        latest_version = annotation["app"].get("latest")
+        checkpoint_tuple = self.graph_builder.memory.saver.get_tuple(config=config)
+        game_version = 1
+        for chunk in checkpoint_tuple.checkpoint['channel_values']["messages"]:
+            if chunk.additional_kwargs.get("tool_outputs"):
+                for tool_output in chunk.additional_kwargs["tool_outputs"]:
+                    if tool_output.get("type") == "code_interpreter_call":
+                        game_version += 1
+                        annotation["app"][f"version_{game_version}"] = {
+                            "code": tool_output.get("code"),
+                            "container_id": tool_output.get("container_id")
+                        }
+        if latest_version:
+            game_version += 1
+            annotation["app"][f"version_{game_version}"] = latest_version
 
-    async def _build_game_files(self, container_id: str, conversation_id: str, annotation: dict) -> None:
+    async def _build_game_files(self, container_id: str, conversation_id: str, annotation: dict, config: dict) -> None:
         """Build game files if container ID is available."""
         try:
             logger.info(f"Building game files for container {container_id} in conversation {conversation_id}")
+            self._extract_app_versions(annotation, config)
             minio_prefix = await self.minio_builder.build_openai_game_file(
                 container_id, 
                 thread_id=conversation_id,
@@ -251,8 +267,8 @@ class CompletionAction:
             
             # Build game files if container ID is available
             container_id = annotation.get("container_id")
-            if container_id or annotation.get("code"):
-                await self._build_game_files(container_id, conversation_id, annotation)
+            if container_id or annotation["app"].get("latest"):
+                await self._build_game_files(container_id, conversation_id, annotation, config)
             
             # Send final completion chunk
             self._send_final_chunk(last_chunk, conversation_id)
