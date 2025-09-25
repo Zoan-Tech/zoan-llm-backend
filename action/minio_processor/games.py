@@ -132,7 +132,7 @@ class Processor(MinioService):
 
         code = ""
         for game_version in annotation["app"].keys():
-            code = annotation["app"][game_version]["code"].replace("/mnt/data", "data/{thread_id}".format(thread_id=thread_id))
+            code += annotation["app"][game_version]["code"].replace("/mnt/data", "data/{thread_id}".format(thread_id=thread_id))
             code += "\n"
             
         exec(code, script_globals, script_locals)
