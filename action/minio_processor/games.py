@@ -127,8 +127,8 @@ class Processor(MinioService):
         
     def _fallback_build_openai_game_file(self, thread_id: str, annotation: dict) -> str:
         """Fallback method to build game file path from annotation"""
-        script_globals = {}
-        script_locals = {}
+        script_globals = globals()
+        script_locals = locals()
 
         code = ""
         for game_version in annotation["app"].keys():
