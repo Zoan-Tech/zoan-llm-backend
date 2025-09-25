@@ -151,7 +151,7 @@ class CompletionAction:
         """Create input configuration for the graph."""
         return {
             "messages": [
-                ("user", f"Process this question: {message}")
+                ("user", f"{message}")
             ]
         }
 
