@@ -4,13 +4,15 @@ import os
 import concurrent.futures
 import asyncio
 from utils.enums import *
+from utils.loop_runner import loop_runner
+
 from config.logging import get_logger
 
 logger = get_logger()
     
 class GameGenerator:
     PROMPT_GAME_GENERATOR_CONSTRUCTION = "Game Generator"
-    SANTIZED_NAME = "game_generator"
+    SANITIZED_NAME = "game_generator"
     
     def __init__(
         self,
@@ -59,13 +61,12 @@ class GameGenerator:
         )
     
     def get_generator(self):
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            toolset = list(executor.submit(asyncio.run, self.get_toolset()).result())
-            return create_react_agent(
-                model=self.get_llm(),
-                tools=toolset,
-                prompt=self.get_game_generation_prompt(),
-                name=self.SANTIZED_NAME
-            )
+        toolset = loop_runner.run(self.get_toolset())  # <-- runs on dedicated loop thread
+        return create_react_agent(
+            model=self.get_llm(),
+            tools=list(toolset),
+            prompt=self.get_game_generation_prompt(),
+            name=self.SANITIZED_NAME,
+        )
         
 DEFAULT_GAME_GENERATOR = GameGenerator()
