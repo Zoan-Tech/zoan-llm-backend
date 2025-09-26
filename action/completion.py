@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 from config.logging import get_logger
 from typing import Dict, Any, List, Tuple, Optional
@@ -149,9 +150,9 @@ class CompletionAction:
 
     def _create_graph_input(self, message: str) -> Dict[str, Any]:
         """Create input configuration for the graph."""
-        return {
+        return { 
             "messages": [
-                ("user", f"{message}")
+                ("user", "[{datetime}] - {message}".format(datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message=message))
             ]
         }
 
@@ -181,14 +182,23 @@ class CompletionAction:
         annotation = {}
         annotation["app"] = {}
         last_chunk = None
-        
-        for agent, chunk in compiled_graph.stream(input_data, config=config, stream_mode="messages", subgraphs=True):                    
-            agent_name = self._extract_agent_name(agent)
-                
-            streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
-            self._send_streaming_chunk(conversation_id, streaming_chunk)
-            last_chunk = streaming_chunk
-        
+        try:
+            for agent, chunk in compiled_graph.stream(input_data, config=config, stream_mode="messages", subgraphs=True):                    
+                agent_name = self._extract_agent_name(agent)
+                    
+                streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
+                self._send_streaming_chunk(conversation_id, streaming_chunk)
+                last_chunk = streaming_chunk
+        except Exception as e:
+            self.graph_builder.memory.saver.adelete_thread(conversation_id)
+            logger.error(f"Error during graph streaming, retrying without memory: {str(e)}")
+            for agent, chunk in compiled_graph.stream(input_data, config=config, stream_mode="messages", subgraphs=True):                    
+                agent_name = self._extract_agent_name(agent)
+                    
+                streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
+                self._send_streaming_chunk(conversation_id, streaming_chunk)
+                last_chunk = streaming_chunk
+            
         return last_chunk, annotation
     
     def _extract_app_versions(self, annotation: Dict[str, Any], config: dict) -> None:

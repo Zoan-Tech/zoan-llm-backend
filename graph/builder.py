@@ -1,4 +1,3 @@
-from datetime import datetime
 import os
 from typing import Any, Dict, Optional, Tuple
 from langfuse import observe
@@ -147,7 +146,6 @@ class GraphBuilder:
             logger.debug(f"Current available agents for primary: {current_avail_agents}")
             compiled_prompt = prompt.compile(
                 current_avail_agents=current_avail_agents,
-                current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             return compiled_prompt
         else:
