@@ -1,6 +1,8 @@
 from langgraph.prebuilt import create_react_agent
 from prompt import BasePromptManager, DEFAULT_PROMPT_MANAGER
 import os
+import concurrent.futures
+import asyncio
 from utils.enums import *
 from config.logging import get_logger
 
@@ -25,10 +27,19 @@ class GameGenerator:
         compiled_prompt = prompt.compile(**kwargs)
         return compiled_prompt
     
-    def get_toolset(self):
+    async def create_container(self):
+        from openai import AsyncOpenAI
+        openai_client = AsyncOpenAI()
+        
+        container = await openai_client.containers.create(name="game-generator-container")
+        return container
+
+    
+    async def get_toolset(self):
+        container = await self.create_container()
         code_interpreter_tool = {
             "type": "code_interpreter",
-            "container": {"type": "auto"},
+            "container": container.id,
         }
         return [code_interpreter_tool]
     
@@ -48,11 +59,13 @@ class GameGenerator:
         )
     
     def get_generator(self):
-        return create_react_agent(
-            model=self.get_llm(),
-            tools=self.get_toolset(),
-            prompt=self.get_game_generation_prompt(),
-            name=self.SANTIZED_NAME
-        )
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            toolset = list(executor.submit(asyncio.run, self.get_toolset()).result())
+            return create_react_agent(
+                model=self.get_llm(),
+                tools=toolset,
+                prompt=self.get_game_generation_prompt(),
+                name=self.SANTIZED_NAME
+            )
         
 DEFAULT_GAME_GENERATOR = GameGenerator()

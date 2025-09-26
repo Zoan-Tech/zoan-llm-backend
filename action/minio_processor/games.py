@@ -127,18 +127,19 @@ class Processor(MinioService):
         
     def _fallback_build_openai_game_file(self, thread_id: str, annotation: dict) -> str:
         """Fallback method to build game file path from annotation"""
-        code = annotation.get("code", "")
-        if code:
-            code = code.replace("/mnt/data", "data/{thread_id}".format(thread_id=thread_id))
-            exec(code, globals())
-            data_path = f"data/{thread_id}"
-            zip_file = None
-            for root, dirs, files in os.walk(data_path):
-                for file in files:
-                    if file.endswith('.zip'):
-                        zip_file = "{root}/{file}".format(root=root, file=file)
-                        break
-            return zip_file
+        script_globals = globals()
+        script_locals = locals()
+
+        code = ""
+        for game_version in annotation["app"].keys():
+            code += annotation["app"][game_version]["code"].replace("/mnt/data", "data/{thread_id}".format(thread_id=thread_id))
+            code += "\n"
+            
+        exec(code, script_globals, script_locals)
+        if 'zip_path' in script_locals:
+            zip_file = script_locals['zip_path']
+            if os.path.exists(zip_file):
+                return zip_file
         
     async def build_openai_game_file(self, container_id: str, thread_id: str, annotation: dict) -> str:
         """Build game files from OpenAI container"""

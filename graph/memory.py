@@ -1,10 +1,12 @@
 import os
+from copy import deepcopy
+from typing import Iterable
 from langchain.embeddings import init_embeddings
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.store.postgres import PostgresStore
 from psycopg import Connection
 from utils.enums import *
-
+    
 class Memory:
 	EMBEDDING_MODEL = "openai:text-embedding-3-small"
 	EMBEDDING_DIM = 1536

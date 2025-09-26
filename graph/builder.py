@@ -1,4 +1,3 @@
-from datetime import datetime
 import os
 from typing import Any, Dict, Optional, Tuple
 from langfuse import observe
@@ -147,7 +146,6 @@ class GraphBuilder:
             logger.debug(f"Current available agents for primary: {current_avail_agents}")
             compiled_prompt = prompt.compile(
                 current_avail_agents=current_avail_agents,
-                current_datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             return compiled_prompt
         else:
@@ -242,6 +240,10 @@ class GraphBuilder:
         try:
             attr_to_keep = ["name", "description", "is_enabled"]
             agent_list = {agent.name: {k: getattr(agent, k) for k in attr_to_keep} for agent in agents if not agent.is_primary}   
+            # TODO: Remove hardcoded description for Game Generator
+            if agent_list.get("Game Generator"):
+                agent_list["Game Generator"]["description"] = "Generates JS web-based games based on user preferences and requirements."
+                
             agent_list_str = "\n".join(
                 f"- {name}: {info.get('description', 'No description provided')} ({'Enabled' if info.get('is_enabled', True) else 'Disabled'})"
                 for name, info in agent_list.items()
