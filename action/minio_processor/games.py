@@ -125,7 +125,7 @@ class Processor(MinioService):
             logger.error(f"[MinioProcessor] Games Bucket: Failed to extract and upload zip to MinIO: {e}")
             raise
         
-    def _fallback_build_openai_game_file(self, thread_id: str, annotation: dict) -> str:
+    def _fallback_build_openai_game_file(self, thread_id: str, annotation: dict) -> Optional[str]:
         """Fallback method to build game file path from annotation"""
         script_globals = globals()
         script_locals = locals()
@@ -135,7 +135,9 @@ class Processor(MinioService):
             code += annotation["app"][game_version]["code"].replace("/mnt/data", "data/{thread_id}".format(thread_id=thread_id))
             code += "\n"
             
+        logger.debug(f"[MinioProcessor] Games Bucket: Annotation: {annotation}")
         exec(code, script_globals, script_locals)
+        
         if 'zip_path' in script_locals:
             zip_file = script_locals['zip_path']
             if os.path.exists(zip_file):
