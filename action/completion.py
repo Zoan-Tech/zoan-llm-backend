@@ -12,6 +12,7 @@ from model import (
     StreamingChunk,
     ChunkContent,
     ResponseMetadata,
+    Attachment,
 )
 from graph.builder import GraphBuilder
 from services.kafka_service import KafkaProducer
@@ -144,13 +145,30 @@ class CompletionAction:
         self._extract_annotations(chunk, annotation)
         return self._convert_chunk_content(chunk, agent_name)
 
-    def _create_graph_input(self, message: str) -> Dict[str, Any]:
+    def _create_graph_input(self, message: str, attachments: List[Attachment] = []) -> Dict[str, Any]:
         """Create input configuration for the graph."""
-        return { 
+        graph_input = { 
             "messages": [
                 ("user", "[{datetime}] - {message}".format(datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message=message))
             ]
         }
+        
+        if len(attachments) > 0:
+            attachment_input = [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": attachment.url,
+                    }
+                }
+                for attachment in attachments
+            ]
+            
+            graph_input["messages"].append(
+                ("user", attachment_input)
+            )
+        
+        return graph_input
 
     def _create_graph_config(self, user_id: str, conversation_id: str) -> Dict[str, Any]:
         """Create configuration for graph execution."""
@@ -247,10 +265,11 @@ class CompletionAction:
         conversation_id: str,
         message: str,
         agents: List[AgentConfig],
+        attachments: List[Attachment] = [],
     ) -> None:
         """Create a completion using the specified model and messages."""
         compiled_graph = self.graph_builder.get_compiled_graph(agents)
-        input_data = self._create_graph_input(message)
+        input_data = self._create_graph_input(message, attachments)
         config = self._create_graph_config(user_id, conversation_id)
         
         try:

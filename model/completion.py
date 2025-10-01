@@ -1,11 +1,17 @@
 from pydantic import BaseModel, Field
 from model.graph.builder import AgentConfig
 
+class Attachment(BaseModel):
+    url: str = Field(..., description="URL of the attachment")
+    mime_type: str = Field(..., description="MIME type of the attachment")
+
 class CompletionRequest(BaseModel):
     user_id: str = Field(..., description="ID of the user making the request")
     conversation_id: str = Field(..., description="ID of the conversation")
 
     message: str = Field(..., description="Question to ask the model")
+    
+    attachments: list[Attachment] = Field([], description="List of attachments associated with the message")
 
     agents: list[AgentConfig] = Field(
         ...,
