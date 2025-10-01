@@ -188,6 +188,7 @@ class GraphBuilder:
             use_responses_api=True,
             stream_usage=agent_config.stream_usage,
             timeout=120,
+            store=False,
             **agent_config.model_kwargs.model_dump(exclude_none=True)
         )
     

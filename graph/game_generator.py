@@ -58,6 +58,7 @@ class GameGenerator:
                 "summary": "auto",  # can be "auto", "concise", or "detailed"
             },
             use_responses_api=True,
+            store=False
         )
     
     def get_generator(self):
