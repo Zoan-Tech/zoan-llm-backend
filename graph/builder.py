@@ -182,13 +182,12 @@ class GraphBuilder:
     def _construct_llm(self, agent_config: AgentConfig) -> Any:
         """
         Initialize the chat model based on the agent configuration.
-        """
+        """ 
         return init_chat_model(
             model=agent_config.model,
             use_responses_api=True,
             stream_usage=agent_config.stream_usage,
             timeout=120,
-            store=False,
             **agent_config.model_kwargs.model_dump(exclude_none=True)
         )
     
@@ -308,10 +307,11 @@ class GraphBuilder:
 
         primary_agent = create_supervisor(
             agents=successfully_added,
-            output_mode="full_history",
+            output_mode="last_message",
             tools=primary_tools,
             model=primary_llm,
             prompt=primary_prompt,
+            add_handoff_messages=False
         )
 
         return primary_agent.compile(
