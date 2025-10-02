@@ -23,7 +23,8 @@ class CompletionMessageHandler(BaseMessageHandler):
                 conversation_id=completion_object.conversation_id,
                 message=completion_object.message,
                 agents=completion_object.agents,
-                attachments=completion_object.attachments
+                attachments=completion_object.attachments,
+                metadata=completion_object.metadata,
             )
             return True
         except Exception as e:

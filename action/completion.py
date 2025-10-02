@@ -13,6 +13,7 @@ from model import (
     ChunkContent,
     ResponseMetadata,
     Attachment,
+    Metadata,
 )
 from graph.builder import GraphBuilder
 from services.kafka_service import KafkaProducer
@@ -145,7 +146,7 @@ class CompletionAction:
         self._extract_annotations(chunk, annotation)
         return self._convert_chunk_content(chunk, agent_name)
 
-    def _create_graph_input(self, message: str, attachments: List[Attachment] = []) -> Dict[str, Any]:
+    def _create_graph_input(self, message: str, attachments: List[Attachment] = [], metadata: Metadata = Metadata()) -> Dict[str, Any]:
         """Create input configuration for the graph."""
         graph_input = { 
             "messages": [
@@ -153,6 +154,7 @@ class CompletionAction:
             ]
         }
         
+        # Include attachments if available
         if len(attachments) > 0:
             attachment_input = [
                 {
@@ -166,6 +168,12 @@ class CompletionAction:
             
             graph_input["messages"].append(
                 ("user", attachment_input)
+            )
+        
+        # Include console logs if available
+        if metadata.console_logs != "":
+            graph_input["messages"].append(
+                ("user", f"Current console logs:\n{metadata.console_logs}")
             )
         
         return graph_input
@@ -266,10 +274,11 @@ class CompletionAction:
         message: str,
         agents: List[AgentConfig],
         attachments: List[Attachment] = [],
+        metadata: Metadata = Metadata(),
     ) -> None:
         """Create a completion using the specified model and messages."""
         compiled_graph = self.graph_builder.get_compiled_graph(agents)
-        input_data = self._create_graph_input(message, attachments)
+        input_data = self._create_graph_input(message, attachments, metadata)
         config = self._create_graph_config(user_id, conversation_id)
         
         try:
