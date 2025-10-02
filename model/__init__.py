@@ -4,6 +4,7 @@ from model.completion import (
     ChunkContent,
     Attachment,
     ResponseMetadata,
+    Metadata,
 )
 from model.graph.builder import (
     ModelKwargs,

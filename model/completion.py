@@ -4,6 +4,9 @@ from model.graph.builder import AgentConfig
 class Attachment(BaseModel):
     url: str = Field(..., description="URL of the attachment")
     mime_type: str = Field(..., description="MIME type of the attachment")
+    
+class Metadata(BaseModel):
+    console_logs: str = Field("", description="Console logs associated with the request")
 
 class CompletionRequest(BaseModel):
     user_id: str = Field(..., description="ID of the user making the request")
@@ -16,6 +19,11 @@ class CompletionRequest(BaseModel):
     agents: list[AgentConfig] = Field(
         ...,
         description="List of agent configurations to use for the completion"
+    )
+    
+    metadata: Metadata = Field(
+        default_factory=Metadata,
+        description="Additional metadata for the completion request"
     )
     
 class ChunkContent(BaseModel):

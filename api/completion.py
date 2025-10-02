@@ -26,6 +26,8 @@ async def create_completion_stream(request: CompletionRequest):
             conversation_id=request.conversation_id,
             message=request.message,
             agents=request.agents,
+            attachments=request.attachments,
+            metadata=request.metadata
         ),
         media_type="application/json"
     )
