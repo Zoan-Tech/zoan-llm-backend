@@ -4,7 +4,7 @@ from typing import Dict
 from action.completion import completion_action
 from config.logging import get_logger
 from model.completion import CompletionRequest
-from handler.kafka_consumer.base import BaseMessageHandler
+from handler.consumer.base import BaseMessageHandler
 from utils.enums import *
 
 logger = get_logger()
@@ -23,6 +23,8 @@ class CompletionMessageHandler(BaseMessageHandler):
                 conversation_id=completion_object.conversation_id,
                 message=completion_object.message,
                 agents=completion_object.agents,
+                attachments=completion_object.attachments,
+                metadata=completion_object.metadata,
             )
             return True
         except Exception as e:

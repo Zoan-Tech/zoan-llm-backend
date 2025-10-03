@@ -1,10 +1,10 @@
 from typing import Dict
-from handler.kafka_consumer.base import BaseMessageHandler
-from handler.kafka_consumer.completion import (
+from handler.consumer.base import BaseMessageHandler
+from handler.consumer.completion import (
     consumer_topic as completion_consumer_topic,
     CompletionMessageHandler,
 )
-from handler.kafka_consumer.minio_bucket import (
+from handler.consumer.minio_bucket import (
     consumer_topic as minio_consumer_topic,
     minio_bucket_handler,
 )

@@ -1,24 +1,29 @@
 # Docker Compose for development
-version: "3.8"
+# version: "3.8"
 
 services:
   app:
     container_name: zoan-llm-backend
-    image: zoan-llm-backend:${IMAGE_TAG}
+    image: zoan-llm-backend:latest
     build: .
     ports:
-      - "8000:8000"
+      - "8000:8003"
     env_file:
       - .env
     environment:
       - POSTGRES_CONN_STRING=${POSTGRES_CONN_STRING}
       - FERNET_SECRET=${FERNET_SECRET}
     volumes:
-      - .:/app
-      - ./games:/app/games
+      # Use named volumes to avoid permission issues
+      - games:/app/games:rw
+      - data:/app/data:rw
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - zoan-network
+
+volumes:
+  games:
+  data:
 
 networks:
   zoan-network:

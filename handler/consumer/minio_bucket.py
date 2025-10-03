@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Dict, Callable
-from handler.kafka_consumer.base import BaseMessageHandler
+from handler.consumer.base import BaseMessageHandler
 from model.minio_bucket import (
     BucketNotification,
 )

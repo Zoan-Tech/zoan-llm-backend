@@ -1,6 +1,9 @@
+from datetime import datetime
 import os
 from config.logging import get_logger
 from typing import Dict, Any, List, Tuple, Optional
+
+from langgraph.graph.state import CompiledStateGraph
 
 from langfuse import observe
 
@@ -9,11 +12,13 @@ from model import (
     StreamingChunk,
     ChunkContent,
     ResponseMetadata,
+    Attachment,
+    Metadata,
 )
 from graph.builder import GraphBuilder
 from services.kafka_service import KafkaProducer
 from utils.enums import *
-from action.completion.game_processor import Processor as GameProcessor
+from action.minio_processor.games import DEFAULT_GAMES_PROCESSOR
 
 # Constants and Configuration
 logger = get_logger()
@@ -40,20 +45,24 @@ class CompletionAction:
             DEFAULT_KAFKA_TOPIC_COMPLETION_RESPONSE
         )
         self.graph_builder = GraphBuilder()
-        self.game_processor = GameProcessor()
+        self.minio_builder = DEFAULT_GAMES_PROCESSOR
         self.kafka_producer = KafkaProducer()
 
     def _send_error_message(self, conversation_id: str, error_message: str) -> None:
         """Send error message to Kafka topic."""
         error_object = {
-            "type": "error",
             "content": [
                 {
                     "type": "text",
                     "text": f"Error during processing: {error_message}",
-                    "agent": PRIMARY_AGENT
+                    "agent": PRIMARY_AGENT,
+                    "index": 0,
+                    "url": "",
                 }
-            ]
+            ],
+            "response_metadata": {
+                "status": FINISHED_STATUS
+            }
         }
         self.kafka_producer.produce(
             topic=self.kafka_topic_response,
@@ -118,29 +127,56 @@ class CompletionAction:
 
     def _extract_annotations(self, chunk, annotation: Dict[str, Any]) -> None:
         """Extract annotations from chunk content (modifies annotation dict in-place)."""
-        if not isinstance(chunk.content, list) or not chunk.content:
-            return
-            
-        for message in chunk.content:
-            if not isinstance(message, dict) or "annotations" not in message:
-                continue
-                
-            for ann in message["annotations"]:
-                if "container_id" in ann:
-                    annotation.update(ann)
+        logger.debug(f"Extracted annotations from chunk: {chunk}")
+        if type(chunk.content) is list:    
+            for message in chunk.content:
+                if not isinstance(message, dict) or "annotations" not in message:
+                    continue
+                        
+        if chunk.additional_kwargs.get("tool_outputs"):
+            for tool_output in chunk.additional_kwargs["tool_outputs"]:
+                if tool_output.get("type") == "code_interpreter_call":
+                    annotation["app"]["latest"] = {
+                        "code": tool_output.get("code"),
+                        "container_id": tool_output.get("container_id")
+                    }
 
     def _process_chunk(self, agent_name: str, chunk, annotation: Dict[str, Any]) -> StreamingChunk:
         """Process chunk content and extract annotations."""
         self._extract_annotations(chunk, annotation)
         return self._convert_chunk_content(chunk, agent_name)
 
-    def _create_graph_input(self, message: str) -> Dict[str, Any]:
+    def _create_graph_input(self, message: str, attachments: List[Attachment] = [], metadata: Metadata = Metadata()) -> Dict[str, Any]:
         """Create input configuration for the graph."""
-        return {
+        graph_input = { 
             "messages": [
-                ("user", f"Process this question: {message}")
+                ("user", "[{datetime}] - {message}".format(datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message=message))
             ]
         }
+        
+        # Include attachments if available
+        if len(attachments) > 0:
+            attachment_input = [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": attachment.url,
+                    }
+                }
+                for attachment in attachments
+            ]
+            
+            graph_input["messages"].append(
+                ("user", attachment_input)
+            )
+        
+        # Include console logs if available
+        if metadata.console_logs != "":
+            graph_input["messages"].append(
+                ("user", f"Current console logs:\n{metadata.console_logs}")
+            )
+        
+        return graph_input
 
     def _create_graph_config(self, user_id: str, conversation_id: str) -> Dict[str, Any]:
         """Create configuration for graph execution."""
@@ -159,31 +195,49 @@ class CompletionAction:
 
     async def _process_graph_stream(
         self, 
-        compiled_graph, 
+        compiled_graph: CompiledStateGraph, 
         input_data: Dict[str, Any], 
         config: Dict[str, Any], 
         conversation_id: str
     ) -> Tuple[Optional[StreamingChunk], Dict[str, Any]]:
         """Process the graph stream and return last chunk and annotations."""
         annotation = {}
+        annotation["app"] = {}
         last_chunk = None
         
         for agent, chunk in compiled_graph.stream(input_data, config=config, stream_mode="messages", subgraphs=True):                    
             agent_name = self._extract_agent_name(agent)
-            logger.debug("Chunks received from agent %s: %s", agent_name, chunk)
                 
             streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
             self._send_streaming_chunk(conversation_id, streaming_chunk)
             last_chunk = streaming_chunk
-        
+            
         return last_chunk, annotation
+    
+    def _extract_app_versions(self, annotation: Dict[str, Any], config: dict) -> None:
+        annotation["app"] = {}
+        checkpoint_tuple = self.graph_builder.memory.saver.get_tuple(config=config)
+        
+        game_version = 1
+        for chunk in checkpoint_tuple.checkpoint['channel_values']["messages"]:
+            if chunk.additional_kwargs.get("tool_outputs"):
+                for tool_output in chunk.additional_kwargs["tool_outputs"]:
+                    if tool_output.get("type") == "code_interpreter_call":
+                        annotation["app"][f"version_{game_version}"] = {
+                            "code": tool_output.get("code"),
+                            "container_id": tool_output.get("container_id")
+                        }
+                        game_version += 1
 
-    async def _build_game_files(self, container_id: str, conversation_id: str) -> None:
+    async def _build_game_files(self, container_id: str, conversation_id: str, annotation: dict, config: dict) -> None:
         """Build game files if container ID is available."""
         try:
-            minio_prefix = await self.game_processor.build_openai_game_file(
+            logger.info(f"Building game files for container {container_id} in conversation {conversation_id}")
+            self._extract_app_versions(annotation, config)
+            minio_prefix = await self.minio_builder.build_openai_game_file(
                 container_id, 
-                thread_id=conversation_id
+                thread_id=conversation_id,
+                annotation=annotation   
             )
             
             chunk_content = ChunkContent(
@@ -191,7 +245,7 @@ class CompletionAction:
                 text="",
                 agent=PRIMARY_AGENT,
                 index=0,
-                url=f"builds/{minio_prefix}/index.html",
+                url=f"{minio_prefix}/index.html",
                 game_version=str(minio_prefix.split('/')[-1])
             )
             
@@ -219,10 +273,12 @@ class CompletionAction:
         conversation_id: str,
         message: str,
         agents: List[AgentConfig],
+        attachments: List[Attachment] = [],
+        metadata: Metadata = Metadata(),
     ) -> None:
         """Create a completion using the specified model and messages."""
         compiled_graph = self.graph_builder.get_compiled_graph(agents)
-        input_data = self._create_graph_input(message)
+        input_data = self._create_graph_input(message, attachments, metadata)
         config = self._create_graph_config(user_id, conversation_id)
         
         try:
@@ -233,9 +289,9 @@ class CompletionAction:
             logger.info("Sent completion response: %s", conversation_id)
             
             # Build game files if container ID is available
-            container_id = annotation.get("container_id")
-            if container_id:
-                await self._build_game_files(container_id, conversation_id)
+            if annotation["app"].get("latest"):
+                container_id = annotation["app"]["latest"]["container_id"]
+                await self._build_game_files(container_id, conversation_id, annotation, config)
             
             # Send final completion chunk
             self._send_final_chunk(last_chunk, conversation_id)
