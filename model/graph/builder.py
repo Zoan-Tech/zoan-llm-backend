@@ -42,6 +42,8 @@ class AgentConfig(BaseModel):
     description: Optional[str] = Field(None, description="Description of the agent")
     instruction: Optional[str] = Field(None, description="Instruction for the agent")
     
+    system_prompt: Optional[str] = Field(None, description="System prompt for the agent")
+    
     is_enabled: bool = Field(..., description="Whether the agent is enabled")
     is_primary: bool = Field(..., description="Whether the agent is the primary agent")
 

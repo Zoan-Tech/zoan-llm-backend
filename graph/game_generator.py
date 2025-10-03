@@ -43,7 +43,10 @@ class GameGenerator:
             "type": "code_interpreter",
             "container": container.id,
         }
-        return [code_interpreter_tool]
+        web_search_tool = {
+            "type": "web_search"
+        }
+        return [code_interpreter_tool, web_search_tool]
     
     def get_llm(self):
         from langchain_openai import ChatOpenAI
