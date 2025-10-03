@@ -1,4 +1,6 @@
 import os
+import threading
+import copy
 from typing import Any, Dict, Optional, Tuple
 from langfuse import observe
 
@@ -35,6 +37,8 @@ from utils.helper import _sanitize_name
 from utils.enums import *
 
 from config.logging import get_logger
+import html
+import re
 
 logger = get_logger()
 
@@ -57,6 +61,10 @@ class GraphBuilder:
         self.prompt_manager = prompt_manager
         self.memory = memory
         self.tool_builder = ToolBuilder(module_client)
+        # Thread lock for preventing race conditions during graph compilation
+        self._compilation_lock = threading.RLock()
+        # Lock for agent prompt loading to prevent concurrent modifications
+        self._prompt_loading_lock = threading.RLock()
     
     @safe_operation(default_return={})
     def _apply_response_mapping(self, raw: Dict[str, Any], mapping: Optional[Dict[str, str]]) -> Dict[str, Any]:
@@ -69,16 +77,39 @@ class GraphBuilder:
                 out[dst_key] = raw[src_key]
         return out
     
+    # Resource limits to prevent exhaustion attacks
+    MAX_WORKFLOWS_PER_AGENT = 50
+    MAX_STEPS_PER_WORKFLOW = 100
+    MAX_TOOLS_TOTAL = 200
+
     @observe(name="construct_agent_toolset")
     @safe_operation(default_return=[])
     def _construct_agent_toolset(self, workflows: list[AgentWorkflow]) -> list[StructuredTool]:
         """
-        Constructs a list of tools from the agent workflows.
+        Constructs a list of tools from the agent workflows with resource limits.
         """
-        tools = []
+        # Validate resource limits to prevent DoS attacks
+        if len(workflows) > self.MAX_WORKFLOWS_PER_AGENT:
+            logger.warning(f"[GraphBuilder] Workflow count ({len(workflows)}) exceeds maximum ({self.MAX_WORKFLOWS_PER_AGENT}). Truncating.")
+            workflows = workflows[:self.MAX_WORKFLOWS_PER_AGENT]
         
-        for workflow in workflows: 
+        tools = []
+        total_steps = 0
+        
+        for workflow in workflows:
+            # Validate workflow steps limit
+            if len(workflow.steps) > self.MAX_STEPS_PER_WORKFLOW:
+                logger.warning(f"[GraphBuilder] Workflow '{workflow.name}' has {len(workflow.steps)} steps, exceeding maximum ({self.MAX_STEPS_PER_WORKFLOW}). Truncating.")
+                workflow.steps = workflow.steps[:self.MAX_STEPS_PER_WORKFLOW]
+            
             for step in workflow.steps:
+                total_steps += 1
+                
+                # Global tool limit check
+                if len(tools) >= self.MAX_TOOLS_TOTAL:
+                    logger.warning(f"[GraphBuilder] Tool limit ({self.MAX_TOOLS_TOTAL}) reached. Stopping tool construction.")
+                    return tools
+                
                 try:
                     tool = self.tool_builder._construct_tool(workflow.name, step)
                     if tool:
@@ -88,12 +119,38 @@ class GraphBuilder:
                     # Continue with other tools rather than failing completely
                     continue
     
+        logger.debug(f"[GraphBuilder] Created {len(tools)} tools from {len(workflows)} workflows with {total_steps} total steps")
         return tools
     
+    def _sanitize_prompt_input(self, text: str) -> str:
+        """
+        Sanitize user input to prevent prompt injection attacks.
+        """
+        if not text or not isinstance(text, str):
+            return "No information provided"
+        
+        # Remove potential prompt injection patterns
+        sanitized = text.strip()
+        
+        # Remove markdown that could break prompt structure
+        sanitized = re.sub(r'#{1,6}\s', '', sanitized)  # Remove markdown headers
+        sanitized = re.sub(r'```[\s\S]*?```', '', sanitized)  # Remove code blocks
+        sanitized = re.sub(r'`[^`]*?`', '', sanitized)  # Remove inline code
+        
+        # HTML escape to prevent XSS-style attacks
+        sanitized = html.escape(sanitized)
+        
+        # Limit length to prevent massive prompts
+        if len(sanitized) > 1000:
+            sanitized = sanitized[:997] + "..."
+            logger.warning("[GraphBuilder] Truncated excessively long input text")
+        
+        return sanitized
+
     @safe_operation(default_return="No workflows defined.")
     def _construct_agent_workflow_prompt(self, workflows: list[AgentWorkflow], is_primary: bool = False) -> str:
         """
-        Mapping agent workflows into an instruction prompt.
+        Mapping agent workflows into an instruction prompt with input sanitization.
         """
         if not workflows:
             if not is_primary:
@@ -105,7 +162,7 @@ class GraphBuilder:
             if not steps:
                 return "No steps defined"
             return "\n".join(
-                f"- {step.name}: {step.description or step.name}"
+                f"- {self._sanitize_prompt_input(step.name)}: {self._sanitize_prompt_input(step.description or step.name)}"
                 for step in steps
             )
         
@@ -121,8 +178,8 @@ class GraphBuilder:
 
         return "\n".join(
             template.format(
-                name=workflow.name,
-                description=workflow.description or "No description provided",
+                name=self._sanitize_prompt_input(workflow.name),
+                description=self._sanitize_prompt_input(workflow.description or "No description provided"),
                 steps=format_step(workflow.steps)
             )
             for workflow in workflows
@@ -158,8 +215,8 @@ class GraphBuilder:
                 raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
             
             compiled_prompt = prompt.compile(
-                description=agent_config.description or "No description provided",
-                instruction=agent_config.instruction or "No instruction provided",
+                description=self._sanitize_prompt_input(agent_config.description or "No description provided"),
+                instruction=self._sanitize_prompt_input(agent_config.instruction or "No instruction provided"),
                 workflows=self._construct_agent_workflow_prompt(agent_config.workflows)
             )
             
@@ -228,21 +285,28 @@ class GraphBuilder:
 
         # Construct tools
         tools = self._construct_agent_toolset(agent_config.workflows)
-
-        # Get prompt
-        prompt = self._get_agent_construction_prompt(agent_config)
         
         # Create the react agent
-        return create_react_agent(llm, tools=tools, prompt=prompt, name=_sanitize_name(agent_config.name.lower()))
+        return create_react_agent(llm, tools=tools, prompt=agent_config.system_prompt, name=_sanitize_name(agent_config.name.lower()))
 
     def _current_avail_agents(self, agents: list[AgentConfig]) -> Tuple[dict, str]:
-        """Get a mapping of currently available agents by name."""
+        """Get a mapping of currently available agents by name with input sanitization."""
         try:
-            attr_to_keep = ["name", "description", "is_enabled"]
-            agent_list = {agent.name: {k: getattr(agent, k) for k in attr_to_keep} for agent in agents if not agent.is_primary}   
+            agent_list = {}
+            
+            for agent in agents:
+                if not agent.is_primary:
+                    # Sanitize agent data to prevent prompt injection
+                    sanitized_agent = {
+                        "name": self._sanitize_prompt_input(agent.name),
+                        "description": self._sanitize_prompt_input(agent.description or "No description provided"),
+                        "is_enabled": agent.is_enabled
+                    }
+                    agent_list[sanitized_agent["name"]] = sanitized_agent
+            
             # TODO: Remove hardcoded description for Game Generator
             if agent_list.get("Game Generator"):
-                agent_list["Game Generator"]["description"] = "Generates JS web-based games based on user preferences and requirements."
+                agent_list["Game Generator"]["description"] = "Generates/modifies games based on user preferences and requirements."
                 
             agent_list_str = "\n".join(
                 f"- {name}: {info.get('description', 'No description provided')} ({'Enabled' if info.get('is_enabled', True) else 'Disabled'})"
@@ -263,10 +327,13 @@ class GraphBuilder:
         if not agents:
             raise GraphBuilderError("At least one agent configuration is required")
 
-        primary_agent_config = agents.pop(0)
+        primary_agent_config = next((agent for agent in agents if agent.is_primary), None)
+        if not primary_agent_config:
+            raise GraphBuilderError("One agent must be marked as primary")
+        
+        agents = [agent for agent in agents if not agent.is_primary]
+        
         primary_llm = self._construct_llm(primary_agent_config)
-        _, current_avail_agents = self._current_avail_agents(agents)
-        primary_prompt = self._get_agent_construction_prompt(primary_agent_config, is_primary=True, current_avail_agents=current_avail_agents)
         # Init primary tools with default memory tools
         # TODO: Re-enable handoff tools when stable
         # primary_tools = [
@@ -310,7 +377,7 @@ class GraphBuilder:
             output_mode="last_message",
             tools=primary_tools,
             model=primary_llm,
-            prompt=primary_prompt,
+            prompt=primary_agent_config.system_prompt,
             add_handoff_messages=False
         )
 
@@ -318,6 +385,26 @@ class GraphBuilder:
             checkpointer=self.memory.saver,
             store=self.memory.store,
         )
+        
+    def _load_agent_prompt(self, agents: list[AgentConfig]) -> list[AgentConfig]:
+        """
+        Load prompts for all agents and return a modified copy.
+        This method creates a deep copy to avoid race conditions with concurrent access.
+        """
+        with self._prompt_loading_lock:
+            # Create a deep copy to avoid modifying the original agents list
+            agents_copy = copy.deepcopy(agents)
+            
+            for agent in agents_copy:
+                if agent.is_primary:        
+                    _, current_avail_agents = self._current_avail_agents(agents_copy)
+                    agent.system_prompt = self._get_agent_construction_prompt(agent, is_primary=True, current_avail_agents=current_avail_agents)
+                elif _sanitize_name(agent.name.lower()) == DEFAULT_GAME_GENERATOR.SANITIZED_NAME:
+                    agent.system_prompt = DEFAULT_GAME_GENERATOR.get_game_generation_prompt()
+                else:
+                    agent.system_prompt = self._get_agent_construction_prompt(agent)
+            
+            return agents_copy
 
     def get_compiled_graph(
         self,
@@ -325,9 +412,40 @@ class GraphBuilder:
     ) -> CompiledStateGraph:
         """
         Get a compiled state graph, using cache if available.
+        Thread-safe implementation that prevents race conditions.
         """
-        return self.graph_cache.get_or_store_compiled_graph(
-            agents,
-            lambda agents: self.build_graph(agents)
-        )
+        with self._compilation_lock:
+            # Load prompts for all agents first, getting a safe copy
+            agents_with_prompts = self._load_agent_prompt(agents)
+            
+            # Use the thread-safe cache method
+            return self._get_or_create_graph_safely(agents_with_prompts)
+    
+    def _get_or_create_graph_safely(self, agents: list[AgentConfig]) -> CompiledStateGraph:
+        """
+        Thread-safe method to get or create compiled graph.
+        """
+        try:
+            # Generate cache key for these agents
+            cache_key = self.graph_cache._generate_agent_config_hash(agents)
+            
+            # Check if graph already exists in cache
+            existing_graph = self.graph_cache.get(cache_key)
+            if existing_graph:
+                logger.debug(f"[GraphBuilder] Retrieved cached graph for key: {cache_key}")
+                return existing_graph
+            
+            # Create new graph if not in cache
+            logger.debug(f"[GraphBuilder] Creating new graph for key: {cache_key}")
+            new_graph = self.build_graph(agents)
+            
+            # Store in cache
+            self.graph_cache.put(cache_key, new_graph)
+            
+            return new_graph
+            
+        except Exception as e:
+            logger.error(f"[GraphBuilder] Error in graph compilation: {e}")
+            # Fallback: create graph without caching
+            return self.build_graph(agents)
         

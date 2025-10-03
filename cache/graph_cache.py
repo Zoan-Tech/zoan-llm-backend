@@ -1,6 +1,7 @@
 import json
 import hashlib
 import time
+import threading
 from config.logging import get_logger
 from typing import Dict, Any, Tuple, Optional
 from langgraph.graph.state import CompiledStateGraph
@@ -13,20 +14,23 @@ logger = get_logger()
 DEFAULT_CACHE_TTL_SECONDS = 1800  # 30 minutes
 class GraphCache(MemCache[str, CompiledStateGraph]):
     """
-    Enhanced graph cache that handles agent configuration caching and analytics.
+    Thread-safe enhanced graph cache that handles agent configuration caching and analytics.
     """
 
     def __init__(self, ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS):
         """
         Initialize the enhanced graph cache.
         
-        :param ttl_seconds: Time-to-live for cache entries in seconds. Defaults to 15 minutes.
+        :param ttl_seconds: Time-to-live for cache entries in seconds. Defaults to 30 minutes.
         """
         super().__init__(ttl_seconds=ttl_seconds, cache_name="GraphCache")
         
         # Agent configuration registry for detailed tracking
         # Format: {config_hash: {agents_summary, first_seen, last_used, usage_count}}
         self._agent_config_registry: Dict[str, Dict[str, Any]] = {}
+        
+        # Additional lock for registry operations
+        self._registry_lock = threading.RLock()
 
     def _generate_cache_key(self, agents: list[AgentConfig], **kwargs) -> str:
         """
@@ -51,25 +55,26 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
 
     def _cleanup_agent_registry(self) -> int:
         """
-        Clean up agent registry entries that no longer have active cache entries.
+        Thread-safe clean up agent registry entries that no longer have active cache entries.
         
         :return: Number of registry entries removed.
         """
-        # Get currently active config hashes from main cache
-        active_hashes = set(self.get_cache_keys())
-        
-        # Remove registry entries for inactive hashes
-        inactive_hashes = set(self._agent_config_registry.keys()) - active_hashes
-        removed_count = len(inactive_hashes)
-        
-        for hash_key in inactive_hashes:
-            del self._agent_config_registry[hash_key]
+        with self._registry_lock:
+            # Get currently active config hashes from main cache
+            active_hashes = set(self.get_cache_keys())
+            
+            # Remove registry entries for inactive hashes
+            inactive_hashes = set(self._agent_config_registry.keys()) - active_hashes
+            removed_count = len(inactive_hashes)
+            
+            for hash_key in inactive_hashes:
+                del self._agent_config_registry[hash_key]
         
         return removed_count
 
     def _update_agent_registry(self, agents: list[AgentConfig], config_hash: str, is_new: bool = False):
         """
-        Update the agent configuration registry with usage statistics.
+        Thread-safe update the agent configuration registry with usage statistics.
         
         :param agents: List of agent configurations.
         :param config_hash: Hash of the agent configuration.
@@ -77,22 +82,23 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
         """
         current_time = time.time()
         
-        if config_hash not in self._agent_config_registry:
-            # Create new registry entry
-            agent_summary = self._create_agent_summary(agents)
-            self._agent_config_registry[config_hash] = {
-                "agents_summary": agent_summary,
-                "first_seen": current_time,
-                "last_used": current_time,
-                "usage_count": 1,
-                "is_compiled": not is_new
-            }
-        else:
-            # Update existing entry
-            self._agent_config_registry[config_hash]["last_used"] = current_time
-            self._agent_config_registry[config_hash]["usage_count"] += 1
-            if not is_new:
-                self._agent_config_registry[config_hash]["is_compiled"] = True
+        with self._registry_lock:
+            if config_hash not in self._agent_config_registry:
+                # Create new registry entry
+                agent_summary = self._create_agent_summary(agents)
+                self._agent_config_registry[config_hash] = {
+                    "agents_summary": agent_summary,
+                    "first_seen": current_time,
+                    "last_used": current_time,
+                    "usage_count": 1,
+                    "is_compiled": not is_new
+                }
+            else:
+                # Update existing entry
+                self._agent_config_registry[config_hash]["last_used"] = current_time
+                self._agent_config_registry[config_hash]["usage_count"] += 1
+                if not is_new:
+                    self._agent_config_registry[config_hash]["is_compiled"] = True
 
     def _create_agent_summary(self, agents: list[AgentConfig]) -> Dict[str, Any]:
         """
@@ -129,6 +135,7 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
                 'is_enabled': agent.is_enabled,
                 'description': agent.description,
                 'instruction': agent.instruction,
+                'system_prompt': agent.system_prompt,
                 'workflows': []
             }
             
@@ -163,7 +170,7 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
         graph_factory_func
     ) -> CompiledStateGraph:
         """
-        Enhanced method to get cached compiled graph or create new one with registry tracking.
+        Thread-safe enhanced method to get cached compiled graph or create new one with registry tracking.
         
         :param agents: List of agent configurations.
         :param graph_factory_func: Function to create a new compiled graph when needed.
@@ -189,13 +196,16 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
 
     def clear_all_cache(self) -> None:
         """
-        Clear all cached compiled graphs and agent registry.
+        Thread-safe clear all cached compiled graphs and agent registry.
         """
-        logger.debug("[GraphCache] Cleared all caches including agent registry")
-        # Use base class method for main cache
+        # Use base class method for main cache (already thread-safe)
         self.clear()
-        # Clear agent registry
-        self._agent_config_registry.clear()
+        
+        # Clear agent registry with thread safety
+        with self._registry_lock:
+            self._agent_config_registry.clear()
+        
+        logger.debug("[GraphCache] Cleared all caches including agent registry")
 
     def force_cleanup_expired_cache(self) -> int:
         """
@@ -216,31 +226,32 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
 
     def get_agent_config_analytics(self) -> Dict[str, Any]:
         """
-        Get detailed analytics about cached agent configurations.
+        Thread-safe get detailed analytics about cached agent configurations.
         
         :return: Dictionary containing agent configuration analytics.
         """
         current_time = time.time()
         
-        analytics = {
-            "total_unique_configs": len(self._agent_config_registry),
-            "configs": {}
-        }
-        
-        for config_hash, config_data in self._agent_config_registry.items():
-            age_since_first_seen = current_time - config_data["first_seen"]
-            age_since_last_used = current_time - config_data["last_used"]
-            
-            analytics["configs"][config_hash] = {
-                "summary": config_data["agents_summary"],
-                "first_seen": config_data["first_seen"],
-                "last_used": config_data["last_used"],
-                "usage_count": config_data["usage_count"],
-                "age_since_first_seen_hours": age_since_first_seen / 3600,
-                "age_since_last_used_hours": age_since_last_used / 3600,
-                "is_compiled": config_data.get("is_compiled", True),
-                "is_currently_cached": self.contains(config_hash)
+        with self._registry_lock:
+            analytics = {
+                "total_unique_configs": len(self._agent_config_registry),
+                "configs": {}
             }
+            
+            for config_hash, config_data in self._agent_config_registry.items():
+                age_since_first_seen = current_time - config_data["first_seen"]
+                age_since_last_used = current_time - config_data["last_used"]
+                
+                analytics["configs"][config_hash] = {
+                    "summary": config_data["agents_summary"],
+                    "first_seen": config_data["first_seen"],
+                    "last_used": config_data["last_used"],
+                    "usage_count": config_data["usage_count"],
+                    "age_since_first_seen_hours": age_since_first_seen / 3600,
+                    "age_since_last_used_hours": age_since_last_used / 3600,
+                    "is_compiled": config_data.get("is_compiled", True),
+                    "is_currently_cached": self.contains(config_hash)
+                }
         
         return analytics
 
