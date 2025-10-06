@@ -148,5 +148,4 @@ minio==7.2.9
 confluent-kafka==2.11.1
 langmem==0.0.29
 qdrant_client==1.15.1
-pillow==10.2.0
 sentence-transformers==5.1.0
