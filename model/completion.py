@@ -1,3 +1,4 @@
+from typing import Optional, List
 from pydantic import BaseModel, Field
 from model.graph.builder import AgentConfig
 
@@ -14,9 +15,9 @@ class CompletionRequest(BaseModel):
 
     message: str = Field(..., description="Question to ask the model")
     
-    attachments: list[Attachment] = Field([], description="List of attachments associated with the message")
+    attachments: Optional[List[Attachment]] = Field(default=None, description="List of attachments associated with the message")
 
-    agents: list[AgentConfig] = Field(
+    agents: List[AgentConfig] = Field(
         ...,
         description="List of agent configurations to use for the completion"
     )
@@ -38,5 +39,5 @@ class ResponseMetadata(BaseModel):
     status: str = Field(..., description="Status of the response", json_schema_extra={"json": "status"})
     
 class StreamingChunk(BaseModel):
-    content: list[ChunkContent] = Field([], description="List of content strings in the chunk")
+    content: List[ChunkContent] = Field([], description="List of content strings in the chunk")
     response_metadata: ResponseMetadata = Field(..., description="Metadata about the response")
