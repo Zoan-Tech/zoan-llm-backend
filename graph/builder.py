@@ -303,10 +303,6 @@ class GraphBuilder:
                         "is_enabled": agent.is_enabled
                     }
                     agent_list[sanitized_agent["name"]] = sanitized_agent
-            
-            # TODO: Remove hardcoded description for Game Generator
-            if agent_list.get("Game Generator"):
-                agent_list["Game Generator"]["description"] = "Generates/modifies games based on user preferences and requirements."
                 
             agent_list_str = "\n".join(
                 f"- {name}: {info.get('description', 'No description provided')} ({'Enabled' if info.get('is_enabled', True) else 'Disabled'})"
@@ -335,7 +331,7 @@ class GraphBuilder:
         
         primary_llm = self._construct_llm(primary_agent_config)
         # Init primary tools with default memory tools
-        # TODO: Re-enable handoff tools when stable
+        # TODO: Re-enable memory tools when stable
         # primary_tools = [
         #     # Memory tools use LangGraph's BaseStore for persistence (4)
         #     create_manage_memory_tool(namespace=("memories",)),
