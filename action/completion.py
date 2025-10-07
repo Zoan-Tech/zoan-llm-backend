@@ -21,7 +21,6 @@ from graph.builder import GraphBuilder
 from services.kafka_service import KafkaProducer
 from utils.enums import *
 from action.minio_processor.games import DEFAULT_GAMES_PROCESSOR
-from langchain_openai import ChatOpenAI
 
 # Constants and Configuration
 logger = get_logger()
