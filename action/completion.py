@@ -1,5 +1,7 @@
 from datetime import datetime
 import os
+import base64
+import httpx
 from config.logging import get_logger
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -19,6 +21,7 @@ from graph.builder import GraphBuilder
 from services.kafka_service import KafkaProducer
 from utils.enums import *
 from action.minio_processor.games import DEFAULT_GAMES_PROCESSOR
+from langchain_openai import ChatOpenAI
 
 # Constants and Configuration
 logger = get_logger()
@@ -145,6 +148,26 @@ class CompletionAction:
         """Process chunk content and extract annotations."""
         self._extract_annotations(chunk, annotation)
         return self._convert_chunk_content(chunk, agent_name)
+    
+    def _graph_image_input(self, attachments: List[Attachment]) -> List[Dict[str, Any]]:
+        """Create input configuration for the graph with image attachments."""
+        # TODO: Add caching for images to avoid repeated downloads
+        attachment_input = []
+        for attachment in attachments:
+            try:
+                image_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
+                
+                attachment_input.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{attachment.mime_type};base64,{image_data}",
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Failed to fetch or encode image from {attachment.url}: {str(e)}")
+                continue
+            
+        return attachment_input
 
     def _create_graph_input(self, message: str, attachments: Optional[List[Attachment]] = None, metadata: Metadata = Metadata()) -> Dict[str, Any]:
         """Create input configuration for the graph."""
@@ -156,19 +179,12 @@ class CompletionAction:
         
         # Include attachments if available
         if attachments and len(attachments) > 0:
-            attachment_input = [
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": attachment.url,
-                    }
-                }
-                for attachment in attachments
-            ]
+            attachment_input = self._graph_image_input(attachments)
             
-            graph_input["messages"].append(
-                ("user", attachment_input)
-            )
+            if len(attachment_input) > 0:
+                graph_input["messages"].append(
+                    ("user", attachment_input)
+                )
         
         # Include console logs if available
         if metadata.console_logs != "":
