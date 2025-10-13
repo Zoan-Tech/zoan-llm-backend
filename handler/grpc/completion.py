@@ -85,7 +85,6 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     attachments=completion_object.attachments,
                     metadata=completion_object.metadata,
                 ):
-                    print(f"Sending chunk: {chunk.model_dump()}")
                     yield chunk
             
             # Convert async generator to sync generator
@@ -122,10 +121,11 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     except StopAsyncIteration:
                         break
             finally:
+                print("Finishing loop completion gRPC for chat", request.conversation_id)
                 loop.close()
                 
         except Exception as e:
-            print(f"Error handling completion message: {str(e)}")
+            print(f"Error handling completion message: {str(e)} for chat {request.conversation_id}")
             # Send error response
             error_chunk = completion_pb2.StreamingChunk(
                 content=[],
