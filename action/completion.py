@@ -347,7 +347,7 @@ class CompletionAction:
             
             # Send final completion chunk
             if last_chunk:
-                last_chunk.response_metadata.status = FINISHED_STATUS
+                last_chunk.response_metadata.status = StreamingStatus.FINISHED
                 yield last_chunk
                 
         except Exception as e:
