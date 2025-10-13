@@ -60,7 +60,7 @@ langchain-openai==0.3.33
 langchain-text-splitters==0.3.9
 langfuse==3.2.6
 langgraph==0.6.8
-langgraph-checkpoint==2.1.1
+langgraph-checkpoint==2.1.2
 langgraph-checkpoint-postgres==2.0.25
 langgraph-prebuilt==0.6.4
 langgraph-sdk==0.2.3

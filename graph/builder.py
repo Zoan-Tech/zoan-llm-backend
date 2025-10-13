@@ -36,6 +36,7 @@ from utils.exception_handler import (
 from utils.helper import _sanitize_name
 from utils.enums import *
 
+from config import Config
 from config.logging import get_logger
 import html
 import re
@@ -182,8 +183,8 @@ class AgentBuilder:
         """
         prompt = self.prompt_manager.get_prompt(
             self.PROMPT_AGENT_CONSTRUCTION,
-            label=os.getenv(SecretEnum.LANGFUSE_PROMPT_LABEL.value),
-            version=os.getenv(SecretEnum.LANGFUSE_VERSION_ID.value),
+            label=Config.LANGFUSE_PROMPT_LABEL,
+            version=Config.LANGFUSE_VERSION_ID,
         )
         if not prompt:
             raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
