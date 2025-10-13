@@ -4,7 +4,7 @@ from fastapi import Request, HTTPException, FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
-from services.kafka_service import KafkaConsumer
+from services.connector.kafka_service import KafkaConsumer
 from handler.consumer import message_consumer
 from config.logging import get_logger
 

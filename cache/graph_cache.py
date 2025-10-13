@@ -325,4 +325,4 @@ class GraphCache(MemCache[str, CompiledStateGraph]):
             "compiled_graphs": self.size  # Use base class property
         }
 
-DEFAULT_GRAPH_CACHE = GraphCache()
+graph_cache = GraphCache()

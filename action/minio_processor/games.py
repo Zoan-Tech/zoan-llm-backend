@@ -3,23 +3,27 @@ import zipfile
 from config.logging import get_logger
 from io import BytesIO
 from typing import Optional
-from services.minio_service import MinioService, MinioConfig
+from services.connector.minio_service import MinioService, MinioConfig
 from openai import AsyncOpenAI
 import uuid
 from utils.enums import *
+from config import Config
 
 logger = get_logger()
 
-DEFAULT_GAMES_BUCKET = "games"
 class Processor(MinioService):
-    openai_client = AsyncOpenAI()
+    openai_client = AsyncOpenAI(
+        api_key=Config.OPENAI_API_KEY,
+    )
     
     def __init__(self, minio_config: Optional[MinioConfig] = None):
         if minio_config is None:
-            bucket = os.getenv(SecretEnum.MINIO_GAMES_BUCKET.value, DEFAULT_GAMES_BUCKET)
+            bucket = Config.MINIO_GAMES_BUCKET
             minio_config = MinioConfig(bucket=bucket)
+            
         super().__init__(minio_config)
         self.bucket = minio_config.bucket
+        self.openai_client = AsyncOpenAI()
     
     async def _count_folders_in_thread(self, thread_id: str) -> int:
         """Count number of folders in games/thread_id"""
@@ -170,4 +174,4 @@ class Processor(MinioService):
             logger.error(f"[MinioProcessor] Games Bucket: Error building game files from container {container_id}: {e}")
             raise
         
-DEFAULT_GAMES_PROCESSOR = Processor()
+games_processor = Processor()

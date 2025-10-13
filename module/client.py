@@ -1,8 +1,6 @@
-import os
 from typing import Optional
 import httpx
-
-from utils.enums import SecretEnum
+from config import Config
 from utils.client_handler import api_error_handler
 
 class ModType:
@@ -18,9 +16,6 @@ mod_mapping = {
     ModName.CODE_GENERATION: "js-game-generator",
 }
 
-DEFAULT_MODULE_HOST = os.getenv(SecretEnum.MODULE_HOST.value)
-DEFAULT_MODULE_API_KEY = os.getenv(SecretEnum.MODULE_API_KEY.value)
-
 class ModuleClient:
     EXECUTE_MODULE_ENDPOINT = "admin/plugins/handle-request"
     """
@@ -34,8 +29,8 @@ class ModuleClient:
     """
     def __init__(
         self,
-        host: str = DEFAULT_MODULE_HOST,
-        api_key: str = DEFAULT_MODULE_API_KEY,
+        host: str = Config.MODULE_HOST,
+        api_key: str = Config.MODULE_API_KEY,
         client: Optional[httpx.AsyncClient] = None,
     ):
         self.MODULE_PREFIX = "builtin-"
@@ -86,4 +81,4 @@ class ModuleClient:
         response.raise_for_status()
         return response.json()
     
-DEFAULT_MODULE_CLIENT = ModuleClient()
+module_client = ModuleClient()
