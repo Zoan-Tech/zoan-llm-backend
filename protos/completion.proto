@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package completion;
+
+// ============ ModelKwargs ============
+message ModelKwargs {
+  optional float temperature = 1;
+  optional int32 max_tokens = 2;
+  optional float top_p = 3;
+  repeated string stop = 4;
+}
+
+// ============ StepModuleArgs ============
+message StepModuleArgs {
+  string type = 1;
+  optional string description = 2;
+  optional string value = 3;
+  bool required = 4;
+  bool end_user_input = 5;
+}
+
+// ============ StepModule ============
+message StepModule {
+  string name = 1;
+  string type = 2;
+  optional string description = 3;
+  map<string, StepModuleArgs> args = 4;
+  map<string, string> response_mapping = 5;
+}
+
+// ============ AgentWorkflow ============
+message AgentWorkflow {
+  optional string id = 1;
+  string name = 2;
+  optional string description = 3;
+  repeated StepModule steps = 4;
+}
+
+// ============ AgentConfig ============
+message AgentConfig {
+  optional string id = 1;
+  string name = 2;
+
+  string model = 3;
+  ModelKwargs model_kwargs = 4;
+
+  optional string description = 5;
+  optional string instruction = 6;
+  optional string system_prompt = 7;
+
+  bool is_enabled = 8;
+  bool is_primary = 9;
+
+  repeated AgentWorkflow workflows = 10;
+
+  bool stream_usage = 11;
+}
+
+// ============ Attachment ============
+message Attachment {
+  string url = 1;
+  string mime_type = 2;
+}
+
+// ============ Metadata ============
+message Metadata {
+  string console_logs = 1;
+}
+
+// ============ CompletionRequest ============
+message CompletionRequest {
+  string user_id = 1;
+  string conversation_id = 2;
+  string message = 3;
+  repeated Attachment attachments = 4;
+  repeated AgentConfig agents = 5;
+  Metadata metadata = 6;
+}
+
+// ============ ChunkContent ============
+message ChunkContent {
+  string type = 1;
+  string text = 2;
+  string agent = 3;
+  float index = 4;
+  string url = 5;
+  string game_version = 6;
+}
+
+// ============ ResponseMetadata ============
+message ResponseMetadata {
+  string status = 1;
+}
+
+// ============ StreamingChunk ============
+message StreamingChunk {
+  repeated ChunkContent content = 1;
+  ResponseMetadata response_metadata = 2;
+}
+
+// ============ Service ============
+service CompletionService {
+  rpc Completion (CompletionRequest) returns (stream StreamingChunk);
+}
