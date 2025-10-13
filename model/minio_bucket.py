@@ -41,9 +41,9 @@ class BucketInfo(BaseModel):
 class ObjectInfo(BaseModel):
     """Information about the S3 object."""
     key: str
-    size: int
-    e_tag: str = Field(..., alias="eTag")
-    content_type: str = Field(..., alias="contentType")
+    size: Optional[int] = None
+    e_tag: Optional[str] = Field(None, alias="eTag")
+    content_type: Optional[str] = Field(None, alias="contentType")
     user_metadata: Dict[str, Any] = Field(default_factory=dict, alias="userMetadata")
     sequencer: str
     

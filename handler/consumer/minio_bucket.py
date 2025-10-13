@@ -8,6 +8,7 @@ from model.minio_bucket import (
 from action.minio_processor.base import BaseProcessor
 from action.minio_processor.library import Processor as LibraryProcessor
 
+from config import Config
 from config.logging import get_logger
 from utils.enums import *
 
@@ -26,15 +27,12 @@ class MinioBucketHandler(BaseMessageHandler):
     async def handle(self, key: str, value: str, headers: Dict, meta: Dict) -> bool:
         try:
             parsed_value = json.loads(value)
-            print(parsed_value)
             bucket_notification = BucketNotification(**parsed_value)
             
             bucket_name = bucket_notification.get_bucket_name()
             await self._processor[bucket_name].process_notification(bucket_notification)
             return True
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             logger.error("Error handling bucket notification: %s", str(e))
             return False
         
@@ -43,6 +41,4 @@ managed_buckets = {
 }
 
 minio_bucket_handler = MinioBucketHandler(managed_buckets)
-        
-DEFAULT_KAFKA_TOPIC_MINIO_NOTIFY = "minio.bucket.event"
-consumer_topic = os.environ.get(SecretEnum.KAFKA_TOPIC_MINIO_NOTIFY.value, DEFAULT_KAFKA_TOPIC_MINIO_NOTIFY)
+consumer_topic = Config.KAFKA_TOPIC_MINIO_NOTIFY

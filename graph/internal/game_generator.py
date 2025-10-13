@@ -6,9 +6,10 @@ from utils.loop_runner import loop_runner
 from config import Config
 from config.logging import get_logger
 from graph.internal.base import BaseInternalAgent
+from graph.internal.tools.game_generator import search_library
 
 logger = get_logger()
-    
+
 class GameGenerator(BaseInternalAgent):
     PROMPT_GAME_GENERATOR_CONSTRUCTION = "Game Generator"
     SANITIZED_NAME = "game_generator"
@@ -40,7 +41,7 @@ class GameGenerator(BaseInternalAgent):
         web_search_tool = {
             "type": "web_search"
         }
-        return [code_interpreter_tool, web_search_tool]
+        return [code_interpreter_tool, web_search_tool, search_library]
     
     def get_agent(self, llm, system_prompt: str, **kwargs):
         toolset = loop_runner.run(self.get_toolset())  # <-- runs on dedicated loop thread

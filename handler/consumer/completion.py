@@ -31,4 +31,5 @@ class CompletionMessageHandler(BaseMessageHandler):
             logger.error("Error handling completion message: %s", str(e))
             return False
 
+completion_message_handler = CompletionMessageHandler()
 consumer_topic = Config.KAFKA_TOPIC_REQUEST

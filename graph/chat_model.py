@@ -28,13 +28,14 @@ class ChatModel:
         else:
             raise ValueError(f"Unsupported model name: {model_name}")
         
-    def _extra_openai_kwargs(self) -> dict:
+    def _extra_openai_kwargs(self, model_name) -> dict:
         return {
             "use_responses_api": True,
-            # TODO: Adjust reasoning based on model capabilities
+        } if 'gpt-5-mini' in model_name else {
+            "use_responses_api": True,
             "reasoning": {
-                "effort": "low",  # can be "low", "medium", or "high"
-                "summary": "detailed",  # can be "auto", "concise", or "detailed"
+                "effort": "medium",
+                "summary": "detailed",
             }
         }
         
@@ -48,7 +49,7 @@ class ChatModel:
         self._ensure_provider_api_key(provider)
         
         if provider == LLMProvider.OPENAI:
-            kwargs.update(self._extra_openai_kwargs())
+            kwargs.update(self._extra_openai_kwargs(model_name))
         
         elif provider == LLMProvider.ANTHROPIC:
             kwargs.update(self._extra_anthropic_kwargs())

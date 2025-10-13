@@ -17,7 +17,7 @@ from model import (
     Metadata,
 )
 from graph.builder import GraphBuilder
-from services.kafka_service import KafkaProducer
+from services.connector.kafka_service import KafkaProducer
 from utils.enums import *
 from action.minio_processor.games import games_processor
 from config import Config

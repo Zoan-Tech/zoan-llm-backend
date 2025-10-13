@@ -3,7 +3,7 @@ import zipfile
 from config.logging import get_logger
 from io import BytesIO
 from typing import Optional
-from services.minio_service import MinioService, MinioConfig
+from services.connector.minio_service import MinioService, MinioConfig
 from openai import AsyncOpenAI
 import uuid
 from utils.enums import *
