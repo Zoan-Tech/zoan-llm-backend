@@ -1,14 +1,13 @@
-import os
 import logging
 import logging.config
 from uvicorn.config import LOGGING_CONFIG
-from utils.enums import SecretEnum
+from config import Config
 
 def setup_logging():
 	"""
 	Setup logging configuration for the application.
 	"""
-	LOGGING_CONFIG["loggers"]["uvicorn"]["level"] = os.getenv(SecretEnum.LOG_LEVEL.value, "INFO")
+	LOGGING_CONFIG["loggers"]["uvicorn"]["level"] = Config.LOG_LEVEL
 	logging_config = LOGGING_CONFIG.copy()
 	logging.config.dictConfig(logging_config)
 

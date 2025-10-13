@@ -1,7 +1,7 @@
-import os
 from abc import ABC
 from langfuse import Langfuse
 from utils.enums import *
+from config import Config
 
 class BasePromptManager(ABC):
   """
@@ -13,8 +13,8 @@ class LangfusePromptManager(BasePromptManager, Langfuse):
   Concrete implementation of BaseMonitor using Langfuse.
   """
   
-DEFAULT_PROMPT_MANAGER = LangfusePromptManager(
-    host=os.environ.get(SecretEnum.LANGFUSE_HOST.value),
-    public_key=os.environ.get(SecretEnum.LANGFUSE_PUBLIC_KEY.value),
-    secret_key=os.environ.get(SecretEnum.LANGFUSE_SECRET_KEY.value),
+langfuse_prompt_manager = LangfusePromptManager(
+    host=Config.LANGFUSE_HOST,
+    public_key=Config.LANGFUSE_PUBLIC_KEY,
+    secret_key=Config.LANGFUSE_SECRET_KEY,
 )

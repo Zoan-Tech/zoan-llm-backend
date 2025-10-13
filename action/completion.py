@@ -1,5 +1,4 @@
 from datetime import datetime
-import os
 import base64
 import httpx
 from config.logging import get_logger
@@ -20,18 +19,18 @@ from model import (
 from graph.builder import GraphBuilder
 from services.kafka_service import KafkaProducer
 from utils.enums import *
-from action.minio_processor.games import DEFAULT_GAMES_PROCESSOR
+from action.minio_processor.games import games_processor
+from config import Config
 
 # Constants and Configuration
 logger = get_logger()
 
+class StreamingStatus:
+    FINISHED = "finished"
+    COMPLETED = "completed"
+
 # Agent and Status Constants
 PRIMARY_AGENT = "supervisor"
-FINISHED_STATUS = "finished"
-AGENT_COMPLETED_STATUS = "completed"
-
-# Kafka Configuration
-DEFAULT_KAFKA_TOPIC_COMPLETION_RESPONSE = "llm.channel.response"
 
 # Processing Configuration
 DEFAULT_RECURSION_LIMIT = 100
@@ -42,12 +41,9 @@ class CompletionAction:
     
     def __init__(self):
         """Initialize the CompletionAction with required services."""
-        self.kafka_topic_response = os.getenv(
-            SecretEnum.KAFKA_TOPIC_RESPONSE.value,
-            DEFAULT_KAFKA_TOPIC_COMPLETION_RESPONSE
-        )
+        self.kafka_topic_response = Config.KAFKA_TOPIC_RESPONSE
         self.graph_builder = GraphBuilder()
-        self.minio_builder = DEFAULT_GAMES_PROCESSOR
+        self.minio_builder = games_processor
         self.kafka_producer = KafkaProducer()
 
     def _send_error_message(self, conversation_id: str, error_message: str) -> None:
@@ -63,7 +59,7 @@ class CompletionAction:
                 }
             ],
             "response_metadata": {
-                "status": FINISHED_STATUS
+                "status": StreamingStatus.FINISHED
             }
         }
         self.kafka_producer.produce(
@@ -266,7 +262,7 @@ class CompletionAction:
             
             game_built_object = StreamingChunk(
                 content=[chunk_content],
-                response_metadata=ResponseMetadata(status=AGENT_COMPLETED_STATUS)
+                response_metadata=ResponseMetadata(status=StreamingStatus.COMPLETED)
             )
             
             self._send_streaming_chunk(conversation_id, game_built_object)
@@ -277,7 +273,7 @@ class CompletionAction:
     def _send_final_chunk(self, last_chunk: StreamingChunk, conversation_id: str) -> None:
         """Send final completion chunk and flush producer."""
         if last_chunk:
-            last_chunk.response_metadata.status = FINISHED_STATUS
+            last_chunk.response_metadata.status = StreamingStatus.FINISHED
             self._send_streaming_chunk(conversation_id, last_chunk)
             self.kafka_producer.flush(timeout=KAFKA_FLUSH_TIMEOUT)
 
