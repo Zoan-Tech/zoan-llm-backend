@@ -1,4 +1,3 @@
-import os
 import json
 from typing import Dict
 from action.completion import completion_action
@@ -6,6 +5,7 @@ from config.logging import get_logger
 from model.completion import CompletionRequest
 from handler.consumer.base import BaseMessageHandler
 from utils.enums import *
+from config import Config
 
 logger = get_logger()
 
@@ -31,5 +31,5 @@ class CompletionMessageHandler(BaseMessageHandler):
             logger.error("Error handling completion message: %s", str(e))
             return False
 
-DEFAULT_KAFKA_TOPIC_REQUEST = "llm.channel.completion"
-consumer_topic = os.environ.get(SecretEnum.KAFKA_TOPIC_REQUEST.value, DEFAULT_KAFKA_TOPIC_REQUEST)
+completion_message_handler = CompletionMessageHandler()
+consumer_topic = Config.KAFKA_TOPIC_REQUEST

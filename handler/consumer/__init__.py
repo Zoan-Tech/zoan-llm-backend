@@ -2,7 +2,11 @@ from typing import Dict
 from handler.consumer.base import BaseMessageHandler
 from handler.consumer.completion import (
     consumer_topic as completion_consumer_topic,
-    CompletionMessageHandler
+    completion_message_handler,
+)
+from handler.consumer.minio_bucket import (
+    consumer_topic as minio_consumer_topic,
+    minio_bucket_handler,
 )
 from config.logging import get_logger
 from utils.enums import *
@@ -59,4 +63,5 @@ class MessageConsumer:
 message_consumer = MessageConsumer()
 
 # Register handlers
-message_consumer.register_handler(completion_consumer_topic, CompletionMessageHandler())
+message_consumer.register_handler(completion_consumer_topic, completion_message_handler)
+message_consumer.register_handler(minio_consumer_topic, minio_bucket_handler)

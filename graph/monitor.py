@@ -2,6 +2,7 @@ import os
 from abc import ABC
 from langfuse import Langfuse
 from utils.enums import *
+from config import Config
 
 class BaseMonitor(ABC):
   """
@@ -14,7 +15,7 @@ class LangfuseMonitor(BaseMonitor, Langfuse):
   """
   
 DEFAULT_MONITOR = LangfuseMonitor(
-    host=os.environ.get(SecretEnum.LANGFUSE_HOST.value),
-    public_key=os.environ.get(SecretEnum.LANGFUSE_PUBLIC_KEY.value),
-    secret_key=os.environ.get(SecretEnum.LANGFUSE_SECRET_KEY.value),
+  host=Config.LANGFUSE_HOST,
+  public_key=Config.LANGFUSE_PUBLIC_KEY,
+  secret_key=Config.LANGFUSE_SECRET_KEY,
 )
