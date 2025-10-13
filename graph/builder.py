@@ -6,8 +6,6 @@ from langfuse import observe
 
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import create_react_agent
-from langgraph_supervisor import create_supervisor
-from langchain.chat_models import init_chat_model
 from langchain_core.tools import StructuredTool
 
 from model import (
@@ -16,14 +14,16 @@ from model import (
     AgentWorkflow,
 )
 
+from graph.chat_model import ChatModel
 from graph.tool import ToolBuilder
-from cache import GraphCache, DEFAULT_GRAPH_CACHE
-from prompt import BasePromptManager, DEFAULT_PROMPT_MANAGER
-from graph.memory import Memory, DEFAULT_MEMORY
-from graph.game_generator import DEFAULT_GAME_GENERATOR
-from langmem import create_manage_memory_tool, create_search_memory_tool
+from cache import GraphCache, graph_cache
+from prompt import BasePromptManager, langfuse_prompt_manager
+from graph.memory import Memory, memory
+from graph.internal.base import BaseInternalAgent
+from graph.internal.game_generator import game_generator
+from graph.internal.primary_agent import primary_agent
 
-from module.client import ModuleClient, DEFAULT_MODULE_CLIENT
+from module.client import ModuleClient, module_client
 
 from utils.exception_handler import (
     GraphBuilderError,
@@ -36,35 +36,30 @@ from utils.exception_handler import (
 from utils.helper import _sanitize_name
 from utils.enums import *
 
+from config import Config
 from config.logging import get_logger
 import html
 import re
 
 logger = get_logger()
 
-class GraphBuilder:
-    """
-    Builds a graph for the agent workflow.
-    Initializes the chat model and constructs tools based on the agent configuration.
-    """
-    PROMPT_AGENT_CONSTRUCTION = "Agent Construction"
-    PROMPT_PRIMARY_AGENT_CONSTRUCTION = "Primary Agent Construction"
+INTERNAL_AGENT: Dict[str, BaseInternalAgent] = {
+    primary_agent.SANITIZED_NAME: primary_agent,
+    game_generator.SANITIZED_NAME: game_generator,
+}
 
-    def __init__(
-        self,
-        graph_cache: GraphCache = DEFAULT_GRAPH_CACHE,
-        prompt_manager: BasePromptManager = DEFAULT_PROMPT_MANAGER,
-        memory: Memory = DEFAULT_MEMORY,
-        module_client: ModuleClient = DEFAULT_MODULE_CLIENT,
-    ):
-        self.graph_cache = graph_cache
+class AgentBuilder:
+    # Resource limits to prevent exhaustion attacks
+    MAX_WORKFLOWS_PER_AGENT = 50
+    MAX_STEPS_PER_WORKFLOW = 100
+    MAX_TOOLS_TOTAL = 200
+    
+    def __init__(self, chat_model: ChatModel, tool_builder: ToolBuilder, prompt_manager: BasePromptManager):
+        self.chat_model = chat_model
+        self.tool_builder = tool_builder
         self.prompt_manager = prompt_manager
-        self.memory = memory
-        self.tool_builder = ToolBuilder(module_client)
-        # Thread lock for preventing race conditions during graph compilation
-        self._compilation_lock = threading.RLock()
-        # Lock for agent prompt loading to prevent concurrent modifications
-        self._prompt_loading_lock = threading.RLock()
+        self.PROMPT_AGENT_CONSTRUCTION = "Agent Construction"
+        self.PROMPT_PRIMARY_AGENT_CONSTRUCTION = "Primary Agent Construction"
     
     @safe_operation(default_return={})
     def _apply_response_mapping(self, raw: Dict[str, Any], mapping: Optional[Dict[str, str]]) -> Dict[str, Any]:
@@ -76,11 +71,6 @@ class GraphBuilder:
             if src_key in raw:
                 out[dst_key] = raw[src_key]
         return out
-    
-    # Resource limits to prevent exhaustion attacks
-    MAX_WORKFLOWS_PER_AGENT = 50
-    MAX_STEPS_PER_WORKFLOW = 100
-    MAX_TOOLS_TOTAL = 200
 
     @observe(name="construct_agent_toolset")
     @safe_operation(default_return=[])
@@ -187,89 +177,36 @@ class GraphBuilder:
     
     @observe(name="get_agent_construction_prompt")
     @graph_builder_exception_handler("Failed to get agent construction prompt")
-    def _get_agent_construction_prompt(self, agent_config: AgentConfig, is_primary: bool = False, **kwargs) -> str:
+    def _get_agent_construction_prompt(self, agent_config: AgentConfig) -> str:
         """
         Get the prompt for constructing the agent.
         """
-        if is_primary:
-            current_avail_agents = kwargs.get("current_avail_agents", "No other agents available.")
-            prompt = self.prompt_manager.get_prompt(
-                self.PROMPT_PRIMARY_AGENT_CONSTRUCTION,
-                label=os.getenv(SecretEnum.LANGFUSE_PROMPT_LABEL.value),
-                version=os.getenv(SecretEnum.LANGFUSE_VERSION_ID.value),
-            )
-            if not prompt:
-                raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
-            logger.debug(f"Current available agents for primary: {current_avail_agents}")
-            compiled_prompt = prompt.compile(
-                current_avail_agents=current_avail_agents,
-            )
-            return compiled_prompt
-        else:
-            prompt = self.prompt_manager.get_prompt(
-                self.PROMPT_AGENT_CONSTRUCTION,
-                label=os.getenv(SecretEnum.LANGFUSE_PROMPT_LABEL.value),
-                version=os.getenv(SecretEnum.LANGFUSE_VERSION_ID.value),
-            )
-            if not prompt:
-                raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
-            
-            compiled_prompt = prompt.compile(
-                description=self._sanitize_prompt_input(agent_config.description or "No description provided"),
-                instruction=self._sanitize_prompt_input(agent_config.instruction or "No instruction provided"),
-                workflows=self._construct_agent_workflow_prompt(agent_config.workflows)
-            )
-            
-            return compiled_prompt
+        prompt = self.prompt_manager.get_prompt(
+            self.PROMPT_AGENT_CONSTRUCTION,
+            label=Config.LANGFUSE_PROMPT_LABEL,
+            version=Config.LANGFUSE_VERSION_ID,
+        )
+        if not prompt:
+            raise PromptNotFoundError(f"Prompt '{self.PROMPT_AGENT_CONSTRUCTION}' not found in Langfuse.")
+        
+        compiled_prompt = prompt.compile(
+            description=agent_config.description or "No description provided",
+            instruction=agent_config.instruction or "No instruction provided",
+            workflows=self._construct_agent_workflow_prompt(agent_config.workflows)
+        )
+        
+        return compiled_prompt
 
     @validation_handler("Agent configuration validation failed")
     def _validate_agent_config(self, agent_config: AgentConfig) -> None:
         """Validate agent configuration before building."""
         if not agent_config.model:
             raise AgentConfigurationError("Model name is required")
-        
-        # Ensure API key is set for the model provider
-        self._ensure_provider_api_key(agent_config)
-            
+
         # Validate workflows have steps
         for workflow in agent_config.workflows:
             if not workflow.steps:
                 logger.warning(f"[GraphBuilder] Workflow '{workflow.name}' has no steps")
-
-    def _construct_llm(self, agent_config: AgentConfig) -> Any:
-        """
-        Initialize the chat model based on the agent configuration.
-        """ 
-        return init_chat_model(
-            model=agent_config.model,
-            use_responses_api=True,
-            stream_usage=agent_config.stream_usage,
-            timeout=120,
-            **agent_config.model_kwargs.model_dump(exclude_none=True)
-        )
-    
-    def _ensure_provider_api_key(self, agent_config: AgentConfig) -> None:
-        """Ensure the API key for the model provider is set in environment variables."""
-        # Currently only OpenAI is supported
-        if ( agent_config.model.startswith("openai:")
-            or agent_config.model.startswith("gpt-")
-            or agent_config.model.startswith("text-")
-        ):
-            if not os.getenv(SecretEnum.OPENAI_API_KEY.value):
-                raise AgentConfigurationError("OPENAI_API_KEY environment variable is not set")
-        elif ( agent_config.model.startswith("anthropic:")
-            or agent_config.model.startswith("claude-")
-        ):
-            if not os.getenv(SecretEnum.ANTHROPIC_API_KEY.value):
-                raise AgentConfigurationError("ANTHROPIC_API_KEY environment variable is not set")
-        elif ( agent_config.model.startswith("deepseek:")
-        ):
-            if not os.getenv(SecretEnum.DEEPSEEK_API_KEY.value):
-                raise AgentConfigurationError("DEEPSEEK_API_KEY environment variable is not set")
-        elif ( agent_config.model.startswith("gemini:")
-        ):
-            if not os.getenv(SecretEnum.GEMINI_API_KEY.value):
-                raise AgentConfigurationError("GEMINI_API_KEY environment variable is not set") 
 
     @observe(name="build_agent")
     @graph_builder_exception_handler("Failed to build agent")
@@ -281,42 +218,84 @@ class GraphBuilder:
         self._validate_agent_config(agent_config)
         
         # Initialize the chat model
-        llm = self._construct_llm(agent_config)
+        llm = self.chat_model._construct_llm_model(agent_config)
 
         # Construct tools
-        tools = self._construct_agent_toolset(agent_config.workflows)
+        toolset = self._construct_agent_toolset(agent_config.workflows)
         
         # Create the react agent
-        return create_react_agent(llm, tools=tools, prompt=agent_config.system_prompt, name=_sanitize_name(agent_config.name.lower()))
+        return create_react_agent(llm, tools=toolset, prompt=agent_config.system_prompt, name=_sanitize_name(agent_config.name.lower()))
 
-    def _current_avail_agents(self, agents: list[AgentConfig]) -> Tuple[dict, str]:
+class GraphBuilder:
+    """
+    Builds a graph for the agent workflow.
+    Initializes the chat model and constructs tools based on the agent configuration.
+    """
+    PROMPT_AGENT_CONSTRUCTION = "Agent Construction"
+    PROMPT_PRIMARY_AGENT_CONSTRUCTION = "Primary Agent Construction"
+
+    def __init__(
+        self,
+        graph_cache: GraphCache = graph_cache,
+        prompt_manager: BasePromptManager = langfuse_prompt_manager,
+        memory: Memory = memory,
+        module_client: ModuleClient = module_client,
+    ):
+        self.graph_cache = graph_cache
+        self.prompt_manager = prompt_manager
+        self.memory = memory
+        self.chat_model = ChatModel()
+        self.tool_builder = ToolBuilder(module_client)
+        # Initialize AgentBuilder
+        self.agent_builder = AgentBuilder(self.chat_model, self.tool_builder, self.prompt_manager)
+        # Thread lock for preventing race conditions during graph compilation
+        self._compilation_lock = threading.RLock()
+        # Lock for agent prompt loading to prevent concurrent modifications
+        self._prompt_loading_lock = threading.RLock()
+
+    def _get_available_agents(self, agents: list[AgentConfig]) -> str:
         """Get a mapping of currently available agents by name with input sanitization."""
         try:
-            agent_list = {}
+            available_agents = ""
             
             for agent in agents:
                 if not agent.is_primary:
-                    # Sanitize agent data to prevent prompt injection
-                    sanitized_agent = {
-                        "name": self._sanitize_prompt_input(agent.name),
-                        "description": self._sanitize_prompt_input(agent.description or "No description provided"),
-                        "is_enabled": agent.is_enabled
-                    }
-                    agent_list[sanitized_agent["name"]] = sanitized_agent
-            
-            # TODO: Remove hardcoded description for Game Generator
-            if agent_list.get("Game Generator"):
-                agent_list["Game Generator"]["description"] = "Generates/modifies games based on user preferences and requirements."
+                    available_agents += f"- {agent.name}:\n\t - Description: {agent.description or 'No description provided'}\n\t - Status: {'Enabled' if agent.is_enabled else 'Disabled'}\n"
                 
-            agent_list_str = "\n".join(
-                f"- {name}: {info.get('description', 'No description provided')} ({'Enabled' if info.get('is_enabled', True) else 'Disabled'})"
-                for name, info in agent_list.items()
-            ) if agent_list else "No other agents available."
-            
-            return agent_list, agent_list_str
+            return available_agents.strip()
         except Exception as e:
             logger.error(f"[GraphBuilder] Failed to get current available agents: {e}")
             return {}, "No other agents available."
+        
+    def build_subgraph(self, agents: list[AgentConfig]) -> list:
+        """
+        Build a state graph for the agents.
+        """
+        successfully_added = []
+        
+        for agent_config in agents:
+            if not agent_config.is_enabled:
+                logger.debug(f"[GraphBuilder] Skipping disabled agent '{agent_config.name}'")
+                continue
+            try:
+                if _sanitize_name(agent_config.name.lower()) in INTERNAL_AGENT.keys():
+                    logger.debug(f"[GraphBuilder] Adding internal agent '{agent_config.name}'")
+                    
+                    agent = INTERNAL_AGENT[_sanitize_name(agent_config.name.lower())].get_agent(
+                        llm=self.chat_model._construct_llm_model(agent_config),
+                        system_prompt=agent_config.system_prompt
+                    )
+                    successfully_added.append(agent)
+                else:
+                    agent = self.agent_builder.build_agent(agent_config)
+                    successfully_added.append(agent)
+                    
+            except Exception as e:
+                logger.error(f"[GraphBuilder] Failed to build agent '{agent_config.name}': {e}")
+                # Continue with other agents rather than failing completely
+                continue
+
+        return successfully_added
 
     @observe(name="build_graph")
     @graph_builder_exception_handler("Failed to build state graph")
@@ -332,56 +311,17 @@ class GraphBuilder:
             raise GraphBuilderError("One agent must be marked as primary")
         
         agents = [agent for agent in agents if not agent.is_primary]
-        
-        primary_llm = self._construct_llm(primary_agent_config)
-        # Init primary tools with default memory tools
-        # TODO: Re-enable handoff tools when stable
-        # primary_tools = [
-        #     # Memory tools use LangGraph's BaseStore for persistence (4)
-        #     create_manage_memory_tool(namespace=("memories",)),
-        #     create_search_memory_tool(namespace=("memories",)),
-        # ]
-        primary_tools = None
 
-        successfully_added = []
-        
-        for agent_config in agents:
-            if not agent_config.is_enabled:
-                logger.debug(f"[GraphBuilder] Skipping disabled agent '{agent_config.name}'")
-                continue
-            try:
-                if _sanitize_name(agent_config.name.lower()) == DEFAULT_GAME_GENERATOR.SANITIZED_NAME:
-                    logger.debug(f"[GraphBuilder] Adding Game Generator agent '{agent_config.name}'")
-                    game_generator_agent = DEFAULT_GAME_GENERATOR.get_generator()
-                    successfully_added.append(game_generator_agent)
-                else:
-                    agent = self.build_agent(agent_config)
-                    successfully_added.append(agent)
-                    
-                # TODO: Re-enable handoff tools when stable
-                # primary_tools.append(
-                #     create_handoff_tool(
-                #         agent_name=_sanitize_name(agent_config.name.lower()),
-                #         name=f"handoff_to_{_sanitize_name(agent_config.name.lower())}",
-                #         description=f"Hand off to agent {_sanitize_name(agent_config.name.lower())}",
-                #     )
-                # )
-                
-            except Exception as e:
-                logger.error(f"[GraphBuilder] Failed to build agent '{agent_config.name}': {e}")
-                # Continue with other agents rather than failing completely
-                continue
+        subgraph = self.build_subgraph(agents)
 
-        primary_agent = create_supervisor(
-            agents=successfully_added,
-            output_mode="last_message",
-            tools=primary_tools,
-            model=primary_llm,
-            prompt=primary_agent_config.system_prompt,
-            add_handoff_messages=False
+        primary_llm = self.chat_model._construct_llm_model(primary_agent_config)
+        supervisor = primary_agent.get_agent(
+            llm=primary_llm,
+            system_prompt=primary_agent_config.system_prompt,
+            agents=subgraph,
         )
 
-        return primary_agent.compile(
+        return supervisor.compile(
             checkpointer=self.memory.saver,
             store=self.memory.store,
         )
@@ -394,33 +334,16 @@ class GraphBuilder:
         with self._prompt_loading_lock:
             # Create a deep copy to avoid modifying the original agents list
             agents_copy = copy.deepcopy(agents)
+            current_avail_agents = self._get_available_agents(agents_copy)
             
             for agent in agents_copy:
-                if agent.is_primary:        
-                    _, current_avail_agents = self._current_avail_agents(agents_copy)
-                    agent.system_prompt = self._get_agent_construction_prompt(agent, is_primary=True, current_avail_agents=current_avail_agents)
-                elif _sanitize_name(agent.name.lower()) == DEFAULT_GAME_GENERATOR.SANITIZED_NAME:
-                    agent.system_prompt = DEFAULT_GAME_GENERATOR.get_game_generation_prompt()
+                if _sanitize_name(agent.name.lower()) in INTERNAL_AGENT.keys():
+                    agent.system_prompt = INTERNAL_AGENT[_sanitize_name(agent.name.lower())].get_prompt(current_avail_agents=current_avail_agents)
                 else:
-                    agent.system_prompt = self._get_agent_construction_prompt(agent)
+                    agent.system_prompt = self.agent_builder._get_agent_construction_prompt(agent)
             
             return agents_copy
-
-    def get_compiled_graph(
-        self,
-        agents: list[AgentConfig]
-    ) -> CompiledStateGraph:
-        """
-        Get a compiled state graph, using cache if available.
-        Thread-safe implementation that prevents race conditions.
-        """
-        with self._compilation_lock:
-            # Load prompts for all agents first, getting a safe copy
-            agents_with_prompts = self._load_agent_prompt(agents)
-            
-            # Use the thread-safe cache method
-            return self._get_or_create_graph_safely(agents_with_prompts)
-    
+        
     def _get_or_create_graph_safely(self, agents: list[AgentConfig]) -> CompiledStateGraph:
         """
         Thread-safe method to get or create compiled graph.
@@ -448,4 +371,19 @@ class GraphBuilder:
             logger.error(f"[GraphBuilder] Error in graph compilation: {e}")
             # Fallback: create graph without caching
             return self.build_graph(agents)
+
+    def get_compiled_graph(
+        self,
+        agents: list[AgentConfig]
+    ) -> CompiledStateGraph:
+        """
+        Get a compiled state graph, using cache if available.
+        Thread-safe implementation that prevents race conditions.
+        """
+        with self._compilation_lock:
+            # Load prompts for all agents first, getting a safe copy
+            agents_with_prompts = self._load_agent_prompt(agents)
+            
+            # Use the thread-safe cache method
+            return self._get_or_create_graph_safely(agents_with_prompts)
         

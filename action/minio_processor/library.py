@@ -6,17 +6,17 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from qdrant_client.http import models as qm
-from action.minio_bucket.base import BaseProcessor
+from action.minio_processor.base import BaseProcessor
 from services.qdrant_service import QdrantService, QdrantConfig
 from services.minio_service import MinioService, MinioConfig
 from model.minio_bucket import BucketNotification, QdrantPayload
 
+from config import Config
 from config.logging import get_logger
 from utils.enums import *
 
 logger = get_logger()
 
-DEFAULT_COLLECTION_NAME = "library"
 DEFAULT_COLLECTION_VECTORS_CONFIG = {
     "image": qm.VectorParams(size=512, distance=qm.Distance.COSINE),
     "text":  qm.VectorParams(size=512, distance=qm.Distance.COSINE),
@@ -30,7 +30,7 @@ class Processor(BaseProcessor):
     def __init__(self, qdrant_config: Optional[QdrantConfig] = None, minio_config: Optional[MinioConfig] = None):
         if qdrant_config is None:
             qdrant_config = QdrantConfig(
-                collection_name=os.getenv(SecretEnum.QDRANT_LIBRARY_COLLECTION_NAME.value, DEFAULT_COLLECTION_NAME),
+                collection_name=Config.QDRANT_LIBRARY_COLLECTION_NAME,
                 vectors_config=DEFAULT_COLLECTION_VECTORS_CONFIG,
                 index_config=DEFAULT_INDEX_CONFIG,
             )

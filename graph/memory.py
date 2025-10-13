@@ -1,9 +1,9 @@
-import os
 from langchain.embeddings import init_embeddings
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.store.postgres import PostgresStore
 from psycopg import Connection
 from utils.enums import *
+from config import Config
     
 class Memory:
 	EMBEDDING_MODEL = "openai:text-embedding-3-small"
@@ -16,7 +16,7 @@ class Memory:
 		self.conn = None  # Store connection reference for cleanup
 		self.embeddings = init_embeddings(
 	  		self.EMBEDDING_MODEL,
-			api_key=os.environ.get(SecretEnum.OPENAI_API_KEY.value)
+			api_key=Config.OPENAI_API_KEY,
 		)
 		self._setup_graph_memory()
 
@@ -24,7 +24,8 @@ class Memory:
 		"""
 		Setup the memory for the graph builder.
 		"""
-		conn_string = os.environ.get(SecretEnum.POSTGRES_CONN_STRING.value)
+		conn_string = Config.POSTGRES_CONN_STRING
+		 # Connection
 		self.conn = Connection.connect(conn_string, autocommit=True)
 
 		# Checkpointer
@@ -42,4 +43,4 @@ class Memory:
 
 		self.store.setup()
   
-DEFAULT_MEMORY = Memory()
+memory = Memory()

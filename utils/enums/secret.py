@@ -13,8 +13,6 @@ class SecretEnum(Enum):
     
     OPENAI_API_KEY = "OPENAI_API_KEY"
     ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
-    DEEPSEEK_API_KEY = "DEEPSEEK_API_KEY"
-    GEMINI_API_KEY = "GEMINI_API_KEY"
     
     # Logging
     LOG_LEVEL = "LOG_LEVEL"

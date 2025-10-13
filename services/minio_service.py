@@ -4,12 +4,12 @@ MinIO Service for Game Generator
 This module provides MinIO integration for uploading generated game files.
 """
 
-import os
 from config.logging import get_logger
 from typing import Optional
 from minio import Minio
 from minio.error import S3Error
 from utils.enums import *
+from config import Config
 
 logger = get_logger()
 
@@ -18,9 +18,9 @@ class MinioConfig:
     def __init__(
       self,
       bucket: str,
-      endpoint: Optional[str] = os.getenv(SecretEnum.MINIO_ENDPOINT.value),
-      access_key: Optional[str] = os.getenv(SecretEnum.MINIO_ACCESS_KEY.value),
-      secret_key: Optional[str] = os.getenv(SecretEnum.MINIO_SECRET_KEY.value),
+      endpoint: Optional[str] = Config.MINIO_ENDPOINT,
+      access_key: Optional[str] = Config.MINIO_ACCESS_KEY,
+      secret_key: Optional[str] = Config.MINIO_SECRET_KEY,
       secure: bool = True
       ):
         self.bucket = bucket

@@ -5,8 +5,8 @@ from handler.consumer.base import BaseMessageHandler
 from model.minio_bucket import (
     BucketNotification,
 )
-from action.minio_bucket.base import BaseProcessor
-from action.minio_bucket.library_processor import Processor as LibraryProcessor
+from action.minio_processor.base import BaseProcessor
+from action.minio_processor.library import Processor as LibraryProcessor
 
 from config.logging import get_logger
 from utils.enums import *

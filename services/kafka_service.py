@@ -1,4 +1,3 @@
-import os
 import asyncio, inspect
 import json
 from config.logging import get_logger
@@ -7,13 +6,14 @@ from confluent_kafka import Producer, Consumer, KafkaException
 from threading import Thread, Event
 from typing import Callable, Optional, Dict, Any
 from utils.enums import *
+from config import Config
 
 logger = get_logger()
 
 class KafkaProducer:
     def __init__(
         self,
-        bootstrap_servers: str = os.getenv(SecretEnum.KAFKA_BOOTSTRAP_SERVERS.value),
+        bootstrap_servers: str = Config.KAFKA_BOOTSTRAP_SERVERS,
         *,
         extra_producer_conf: Optional[Dict[str, Any]] = None,
     ):
@@ -93,8 +93,8 @@ class KafkaProducer:
 class KafkaConsumer:
     def __init__(
         self,
-        bootstrap_servers: str = os.getenv(SecretEnum.KAFKA_BOOTSTRAP_SERVERS.value),
-        group_id: str = os.getenv(SecretEnum.KAFKA_GROUP_ID.value),   
+        bootstrap_servers: str = Config.KAFKA_BOOTSTRAP_SERVERS,
+        group_id: str = Config.KAFKA_GROUP_ID,
         consumer_topics: list[str] = None,
         *,
         enable_auto_commit: bool = False,

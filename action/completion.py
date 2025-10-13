@@ -1,5 +1,6 @@
 from datetime import datetime
-import os
+import base64
+import httpx
 from config.logging import get_logger
 from typing import Dict, Any, List, Tuple, Optional
 
@@ -18,18 +19,18 @@ from model import (
 from graph.builder import GraphBuilder
 from services.kafka_service import KafkaProducer
 from utils.enums import *
-from action.minio_processor.games import DEFAULT_GAMES_PROCESSOR
+from action.minio_processor.games import games_processor
+from config import Config
 
 # Constants and Configuration
 logger = get_logger()
 
+class StreamingStatus:
+    FINISHED = "finished"
+    COMPLETED = "completed"
+
 # Agent and Status Constants
 PRIMARY_AGENT = "supervisor"
-FINISHED_STATUS = "finished"
-AGENT_COMPLETED_STATUS = "completed"
-
-# Kafka Configuration
-DEFAULT_KAFKA_TOPIC_COMPLETION_RESPONSE = "llm.channel.response"
 
 # Processing Configuration
 DEFAULT_RECURSION_LIMIT = 100
@@ -40,12 +41,9 @@ class CompletionAction:
     
     def __init__(self):
         """Initialize the CompletionAction with required services."""
-        self.kafka_topic_response = os.getenv(
-            SecretEnum.KAFKA_TOPIC_RESPONSE.value,
-            DEFAULT_KAFKA_TOPIC_COMPLETION_RESPONSE
-        )
+        self.kafka_topic_response = Config.KAFKA_TOPIC_RESPONSE
         self.graph_builder = GraphBuilder()
-        self.minio_builder = DEFAULT_GAMES_PROCESSOR
+        self.minio_builder = games_processor
         self.kafka_producer = KafkaProducer()
 
     def _send_error_message(self, conversation_id: str, error_message: str) -> None:
@@ -61,7 +59,7 @@ class CompletionAction:
                 }
             ],
             "response_metadata": {
-                "status": FINISHED_STATUS
+                "status": StreamingStatus.FINISHED
             }
         }
         self.kafka_producer.produce(
@@ -145,8 +143,28 @@ class CompletionAction:
         """Process chunk content and extract annotations."""
         self._extract_annotations(chunk, annotation)
         return self._convert_chunk_content(chunk, agent_name)
+    
+    def _graph_image_input(self, attachments: List[Attachment]) -> List[Dict[str, Any]]:
+        """Create input configuration for the graph with image attachments."""
+        # TODO: Add caching for images to avoid repeated downloads
+        attachment_input = []
+        for attachment in attachments:
+            try:
+                image_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
+                
+                attachment_input.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{attachment.mime_type};base64,{image_data}",
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Failed to fetch or encode image from {attachment.url}: {str(e)}")
+                continue
+            
+        return attachment_input
 
-    def _create_graph_input(self, message: str, attachments: List[Attachment] = [], metadata: Metadata = Metadata()) -> Dict[str, Any]:
+    def _create_graph_input(self, message: str, attachments: Optional[List[Attachment]] = None, metadata: Metadata = Metadata()) -> Dict[str, Any]:
         """Create input configuration for the graph."""
         graph_input = { 
             "messages": [
@@ -155,20 +173,13 @@ class CompletionAction:
         }
         
         # Include attachments if available
-        if len(attachments) > 0:
-            attachment_input = [
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": attachment.url,
-                    }
-                }
-                for attachment in attachments
-            ]
+        if attachments and len(attachments) > 0:
+            attachment_input = self._graph_image_input(attachments)
             
-            graph_input["messages"].append(
-                ("user", attachment_input)
-            )
+            if len(attachment_input) > 0:
+                graph_input["messages"].append(
+                    ("user", attachment_input)
+                )
         
         # Include console logs if available
         if metadata.console_logs != "":
@@ -251,7 +262,7 @@ class CompletionAction:
             
             game_built_object = StreamingChunk(
                 content=[chunk_content],
-                response_metadata=ResponseMetadata(status=AGENT_COMPLETED_STATUS)
+                response_metadata=ResponseMetadata(status=StreamingStatus.COMPLETED)
             )
             
             self._send_streaming_chunk(conversation_id, game_built_object)
@@ -262,7 +273,7 @@ class CompletionAction:
     def _send_final_chunk(self, last_chunk: StreamingChunk, conversation_id: str) -> None:
         """Send final completion chunk and flush producer."""
         if last_chunk:
-            last_chunk.response_metadata.status = FINISHED_STATUS
+            last_chunk.response_metadata.status = StreamingStatus.FINISHED
             self._send_streaming_chunk(conversation_id, last_chunk)
             self.kafka_producer.flush(timeout=KAFKA_FLUSH_TIMEOUT)
 
@@ -273,7 +284,7 @@ class CompletionAction:
         conversation_id: str,
         message: str,
         agents: List[AgentConfig],
-        attachments: List[Attachment] = [],
+        attachments: Optional[List[Attachment]] = None,
         metadata: Metadata = Metadata(),
     ) -> None:
         """Create a completion using the specified model and messages."""

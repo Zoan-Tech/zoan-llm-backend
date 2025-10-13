@@ -2,14 +2,15 @@ import os
 from typing import Optional
 from qdrant_client import QdrantClient
 from utils.enums import SecretEnum
+from config import Config
 
 class QdrantConfig:
     """Configuration for Qdrant service"""
     def __init__(
         self,
         collection_name: str,
-        url: str = os.getenv(SecretEnum.QDRANT_URL.value),
-        api_key: Optional[str] = os.getenv(SecretEnum.QDRANT_API_KEY.value),
+        url: str = Config.QDRANT_URL,
+        api_key: Optional[str] = Config.QDRANT_API_KEY,
         vectors_config: Optional[dict] = None,
         index_config: Optional[dict] = {},
     ):
