@@ -1,7 +1,9 @@
 from datetime import datetime
 import os
+import base64
+import httpx
 from config.logging import get_logger
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, AsyncGenerator
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -70,13 +72,14 @@ class CompletionAction:
             value=error_object,
         )
 
-    def _send_streaming_chunk(self, conversation_id: str, streaming_chunk: StreamingChunk) -> None:
-        """Send streaming chunk to Kafka topic."""
-        self.kafka_producer.produce(
-            topic=self.kafka_topic_response,
-            key=conversation_id,
-            value=streaming_chunk.model_dump()
-        )
+    # TODO: Remove this function when gRPC is tested
+    # def _send_streaming_chunk(self, conversation_id: str, streaming_chunk: StreamingChunk) -> None:
+    #     """Send streaming chunk to Kafka topic."""
+    #     self.kafka_producer.produce(
+    #         topic=self.kafka_topic_response,
+    #         key=conversation_id,
+    #         value=streaming_chunk.model_dump()
+    #     )
         
     def _extract_reasoning_content(self, chunk, agent_name: str) -> List[ChunkContent]:
         """Extract reasoning content from chunk's additional kwargs."""
@@ -145,8 +148,28 @@ class CompletionAction:
         """Process chunk content and extract annotations."""
         self._extract_annotations(chunk, annotation)
         return self._convert_chunk_content(chunk, agent_name)
+    
+    def _graph_image_input(self, attachments: List[Attachment]) -> List[Dict[str, Any]]:
+        """Create input configuration for the graph with image attachments."""
+        # TODO: Add caching for images to avoid repeated downloads
+        attachment_input = []
+        for attachment in attachments:
+            try:
+                image_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
+                
+                attachment_input.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{attachment.mime_type};base64,{image_data}",
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Failed to fetch or encode image from {attachment.url}: {str(e)}")
+                continue
+            
+        return attachment_input
 
-    def _create_graph_input(self, message: str, attachments: List[Attachment] = [], metadata: Metadata = Metadata()) -> Dict[str, Any]:
+    def _create_graph_input(self, message: str, attachments: Optional[List[Attachment]] = None, metadata: Metadata = Metadata()) -> Dict[str, Any]:
         """Create input configuration for the graph."""
         graph_input = { 
             "messages": [
@@ -155,20 +178,13 @@ class CompletionAction:
         }
         
         # Include attachments if available
-        if len(attachments) > 0:
-            attachment_input = [
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": attachment.url,
-                    }
-                }
-                for attachment in attachments
-            ]
+        if attachments and len(attachments) > 0:
+            attachment_input = self._graph_image_input(attachments)
             
-            graph_input["messages"].append(
-                ("user", attachment_input)
-            )
+            if len(attachment_input) > 0:
+                graph_input["messages"].append(
+                    ("user", attachment_input)
+                )
         
         # Include console logs if available
         if metadata.console_logs != "":
@@ -209,7 +225,8 @@ class CompletionAction:
             agent_name = self._extract_agent_name(agent)
                 
             streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
-            self._send_streaming_chunk(conversation_id, streaming_chunk)
+            # TODO: Uncomment this when gRPC is tested
+            # self._send_streaming_chunk(conversation_id, streaming_chunk)
             last_chunk = streaming_chunk
             
         return last_chunk, annotation
@@ -254,7 +271,8 @@ class CompletionAction:
                 response_metadata=ResponseMetadata(status=AGENT_COMPLETED_STATUS)
             )
             
-            self._send_streaming_chunk(conversation_id, game_built_object)
+            # TODO: Uncomment this when gRPC is tested
+            # self._send_streaming_chunk(conversation_id, game_built_object)
             
         except Exception as e:
             logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
@@ -263,7 +281,8 @@ class CompletionAction:
         """Send final completion chunk and flush producer."""
         if last_chunk:
             last_chunk.response_metadata.status = FINISHED_STATUS
-            self._send_streaming_chunk(conversation_id, last_chunk)
+            # TODO: Uncomment this when gRPC is tested
+            # self._send_streaming_chunk(conversation_id, last_chunk)
             self.kafka_producer.flush(timeout=KAFKA_FLUSH_TIMEOUT)
 
     @observe(as_type="generation")
@@ -273,7 +292,7 @@ class CompletionAction:
         conversation_id: str,
         message: str,
         agents: List[AgentConfig],
-        attachments: List[Attachment] = [],
+        attachments: Optional[List[Attachment]] = None,
         metadata: Metadata = Metadata(),
     ) -> None:
         """Create a completion using the specified model and messages."""
@@ -299,6 +318,50 @@ class CompletionAction:
         except Exception as e:
             logger.error(f"Error during graph streaming: {str(e)}")
             self._send_error_message(conversation_id, str(e))
+
+    async def create_completion_stream(
+        self,
+        user_id: str,
+        conversation_id: str,
+        message: str,
+        agents: List[AgentConfig],
+        attachments: Optional[List[Attachment]] = None,
+        metadata: Metadata = Metadata(),
+    ) -> AsyncGenerator[StreamingChunk, None]:
+        """Create a completion and stream responses directly (for gRPC)."""
+        compiled_graph = self.graph_builder.get_compiled_graph(agents)
+        input_data = self._create_graph_input(message, attachments, metadata)
+        config = self._create_graph_config(user_id, conversation_id)
+        
+        try:
+            annotation = {}
+            annotation["app"] = {}
+            last_chunk = None
+            
+            for agent, chunk in compiled_graph.stream(input_data, config=config, stream_mode="messages", subgraphs=True):                    
+                agent_name = self._extract_agent_name(agent)
+                streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
+                yield streaming_chunk
+                last_chunk = streaming_chunk
+            
+            # Build game files if container ID is available
+            if annotation["app"].get("latest"):
+                container_id = annotation["app"]["latest"]["container_id"]
+                await self._build_game_files(container_id, conversation_id, annotation, config)
+            
+            # Send final completion chunk
+            if last_chunk:
+                last_chunk.response_metadata.status = FINISHED_STATUS
+                yield last_chunk
+                
+        except Exception as e:
+            logger.error(f"Error during graph streaming: {str(e)}")
+            # Yield error chunk
+            error_chunk = StreamingChunk(
+                content=[],
+                response_metadata=ResponseMetadata(status=f"error: {str(e)}")
+            )
+            yield error_chunk
 
     def clear_all_cache(self) -> None:
         """Clear all cached compiled graphs and conversation mappings."""
