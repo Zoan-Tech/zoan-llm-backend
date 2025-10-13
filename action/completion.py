@@ -72,13 +72,14 @@ class CompletionAction:
             value=error_object,
         )
 
-    def _send_streaming_chunk(self, conversation_id: str, streaming_chunk: StreamingChunk) -> None:
-        """Send streaming chunk to Kafka topic."""
-        self.kafka_producer.produce(
-            topic=self.kafka_topic_response,
-            key=conversation_id,
-            value=streaming_chunk.model_dump()
-        )
+    # TODO: Remove this function when gRPC is tested
+    # def _send_streaming_chunk(self, conversation_id: str, streaming_chunk: StreamingChunk) -> None:
+    #     """Send streaming chunk to Kafka topic."""
+    #     self.kafka_producer.produce(
+    #         topic=self.kafka_topic_response,
+    #         key=conversation_id,
+    #         value=streaming_chunk.model_dump()
+    #     )
         
     def _extract_reasoning_content(self, chunk, agent_name: str) -> List[ChunkContent]:
         """Extract reasoning content from chunk's additional kwargs."""
@@ -224,7 +225,8 @@ class CompletionAction:
             agent_name = self._extract_agent_name(agent)
                 
             streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
-            self._send_streaming_chunk(conversation_id, streaming_chunk)
+            # TODO: Uncomment this when gRPC is tested
+            # self._send_streaming_chunk(conversation_id, streaming_chunk)
             last_chunk = streaming_chunk
             
         return last_chunk, annotation
@@ -269,7 +271,8 @@ class CompletionAction:
                 response_metadata=ResponseMetadata(status=AGENT_COMPLETED_STATUS)
             )
             
-            self._send_streaming_chunk(conversation_id, game_built_object)
+            # TODO: Uncomment this when gRPC is tested
+            # self._send_streaming_chunk(conversation_id, game_built_object)
             
         except Exception as e:
             logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
@@ -278,7 +281,8 @@ class CompletionAction:
         """Send final completion chunk and flush producer."""
         if last_chunk:
             last_chunk.response_metadata.status = FINISHED_STATUS
-            self._send_streaming_chunk(conversation_id, last_chunk)
+            # TODO: Uncomment this when gRPC is tested
+            # self._send_streaming_chunk(conversation_id, last_chunk)
             self.kafka_producer.flush(timeout=KAFKA_FLUSH_TIMEOUT)
 
     @observe(as_type="generation")
