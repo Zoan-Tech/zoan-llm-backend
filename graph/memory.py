@@ -13,6 +13,7 @@ class Memory:
 	def __init__(self):
 		self.saver = None
 		self.store = None
+		self.conn = None  # Store connection reference for cleanup
 		self.embeddings = init_embeddings(
 	  		self.EMBEDDING_MODEL,
 			api_key=Config.OPENAI_API_KEY,
@@ -25,15 +26,15 @@ class Memory:
 		"""
 		conn_string = Config.POSTGRES_CONN_STRING
 		 # Connection
-		conn = Connection.connect(conn_string, autocommit=True)
+		self.conn = Connection.connect(conn_string, autocommit=True)
 
 		# Checkpointer
-		self.saver = PostgresSaver(conn)
+		self.saver = PostgresSaver(self.conn)
 		self.saver.setup()
 
 		# Store
 		self.store = PostgresStore(
-	  		conn,
+	  		self.conn,
 			index={
 				"dims": 1536,
 				"embed": self.embeddings,

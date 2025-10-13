@@ -35,8 +35,6 @@ class MinioService:
     """
     
     def __init__(self, config: MinioConfig):
-        self.client = None
-        
         if not all([config.endpoint, config.access_key, config.secret_key]):
             raise ValueError("MinIO configuration incomplete. Please provide endpoint, access_key, and secret_key.")
         

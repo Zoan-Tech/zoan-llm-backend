@@ -3,7 +3,7 @@ import zipfile
 from config.logging import get_logger
 from io import BytesIO
 from typing import Optional
-from services.minio_service import MinioService, MinioConfig
+from services.connector.minio_service import MinioService, MinioConfig
 from openai import AsyncOpenAI
 import uuid
 from utils.enums import *
@@ -23,6 +23,7 @@ class Processor(MinioService):
             
         super().__init__(minio_config)
         self.bucket = minio_config.bucket
+        self.openai_client = AsyncOpenAI()
     
     async def _count_folders_in_thread(self, thread_id: str) -> int:
         """Count number of folders in games/thread_id"""
