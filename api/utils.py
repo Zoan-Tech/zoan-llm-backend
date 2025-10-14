@@ -1,11 +1,7 @@
-import asyncio
-from contextlib import asynccontextmanager
-from fastapi import Request, HTTPException, FastAPI
+from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
-from services.connector.kafka_service import KafkaConsumer
-from handler.consumer import message_consumer
 from config.logging import get_logger
 
 logger = get_logger()
@@ -42,22 +38,3 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "message": message
         }
     )
-
-@asynccontextmanager
-async def kafka_lifespan(app: FastAPI):
-    """Lifespan context manager for Kafka consumer"""
-    loop = asyncio.get_running_loop()
-    consumer_topics = list(message_consumer._handlers.keys())
-    kafka_consumer = KafkaConsumer(
-        asyncio_loop=loop,
-        consumer_topics=consumer_topics
-    )
-    app.state.kafka = kafka_consumer
-
-    kafka_consumer.start_consumer(message_consumer.on_message)
-
-    yield   # <- App runs here
-
-    # --- Shutdown ---
-    if kafka_consumer:
-        kafka_consumer.close()

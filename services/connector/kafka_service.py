@@ -144,7 +144,7 @@ class KafkaConsumer:
         self.consumer.subscribe(self.consumer_topics)
 
         def _loop():
-            logger.debug("[KafkaClient] Consumer started, subscribed to %s", self.consumer_topics)
+            logger.info("[KafkaClient] Consumer started, subscribed to %s", self.consumer_topics)
             try:
                 while not self._stop.is_set():
                     msg = self.consumer.poll(poll_timeout)

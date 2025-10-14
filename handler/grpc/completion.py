@@ -14,6 +14,9 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
     def Completion(self, request, context): # type: ignore
         """Handle completion requests and stream responses."""
         try:
+            metadata = dict(context.invocation_metadata())
+            # Get authorization token
+            auth_token = metadata.get('authorization', '')
             # Convert protobuf request to our model
             completion_object = CompletionRequest(
                 user_id=request.user_id,
@@ -73,7 +76,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                 }
             )
             
-            print(f"Received completion request: {completion_object.model_dump()}")
+            logger.debug(f"Received completion request: {completion_object.model_dump()}")
             
             # Process completion and stream responses using asyncio.run
             async def async_generator():
@@ -84,6 +87,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     agents=completion_object.agents,
                     attachments=completion_object.attachments,
                     metadata=completion_object.metadata,
+                    auth_token=auth_token,
                 ):
                     yield chunk
             
@@ -121,11 +125,11 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     except StopAsyncIteration:
                         break
             finally:
-                print("Finishing loop completion gRPC for chat", request.conversation_id)
+                logger.info(f"Finishing loop completion gRPC for chat {request.conversation_id}")
                 loop.close()
                 
         except Exception as e:
-            print(f"Error handling completion message: {str(e)} for chat {request.conversation_id}")
+            logger.error(f"Error handling completion message: {str(e)} for chat {request.conversation_id}")
             # Send error response
             error_chunk = completion_pb2.StreamingChunk(
                 content=[],
