@@ -281,7 +281,7 @@ class CompletionAction:
         if last_chunk:
             last_chunk.response_metadata.status = StreamingStatus.FINISHED
             print("Sending final chunk", last_chunk.model_dump())
-            self.kafka_producer.flush(timeout=KAFKA_FLUSH_TIMEOUT)
+            
             return last_chunk
         return None
 
