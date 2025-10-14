@@ -2,6 +2,8 @@ from datetime import datetime
 import base64
 import httpx
 import asyncio
+import threading
+from collections import defaultdict
 from config.logging import get_logger
 from typing import Dict, Any, List, Tuple, Optional, AsyncGenerator
 
@@ -48,6 +50,10 @@ class CompletionAction:
         self.graph_builder = GraphBuilder()
         self.minio_builder = games_processor
         self.kafka_producer = KafkaProducer()
+        
+        # Conversation-level locks to prevent concurrent processing of same conversation
+        self._conversation_locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
+        self._locks_cleanup_lock = threading.Lock()
 
     def _send_error_message(self, conversation_id: str, error_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         """Send error message to Kafka topic."""
@@ -302,7 +308,7 @@ class CompletionAction:
             
             # TODO: Uncomment this when gRPC is tested
             # self._send_streaming_chunk(conversation_id, game_built_object)
-            print("Sending game built object", game_built_object.model_dump())
+            logger.debug("Sending game built object", game_built_object.model_dump())
             yield game_built_object
             
         except Exception as e:
@@ -312,7 +318,7 @@ class CompletionAction:
         """Send final completion chunk and flush producer."""
         if last_chunk:
             last_chunk.response_metadata.status = StreamingStatus.FINISHED
-            print("Sending final chunk", last_chunk.model_dump())
+            logger.debug("Sending final chunk", last_chunk.model_dump())
             
             return last_chunk
         return None
@@ -444,55 +450,83 @@ class CompletionAction:
         Yields:
             StreamingChunk objects containing completion responses
         """
-        # Initialize graph components
-        compiled_graph = self.graph_builder.get_compiled_graph(agents)
-        input_data = self._create_graph_input(message, attachments, metadata)
-        config = self._create_graph_config(user_id, conversation_id)
+        # Acquire conversation lock to prevent concurrent processing
+        conversation_lock = self._conversation_locks[conversation_id]
         
-        # Start title generation in background (fire and forget)
-        try:
-            messages = await self._get_conversation_messages(config)
-            await self._start_title_generation_background(message, messages, conversation_id, auth_token)
-        except Exception as e:
-            logger.warning(f"[CompletionAction] Failed to start title generation: {str(e)}")
-        
-        # Main streaming flow
-        try:
-            annotation = {"app": {}}
-            last_chunk = None
-            
-            # Stream graph processing chunks
-            async for streaming_chunk, last_chunk in self._stream_graph_chunks(
-                compiled_graph, 
-                input_data, 
-                config, 
-                annotation
-            ):
-                yield streaming_chunk
-            
-            # Build and stream game files if available
-            if annotation["app"].get("latest"):
-                container_id = annotation["app"]["latest"]["container_id"]
-                async for game_chunk in self._build_game_files(
-                    container_id, 
-                    conversation_id, 
-                    annotation, 
-                    config
-                ):
-                    yield game_chunk
-            
-            # Send final completion chunk
-            if last_chunk:
-                last_chunk.response_metadata.status = StreamingStatus.FINISHED
-                yield last_chunk
-                
-        except Exception as e:
-            logger.error(f"[CompletionAction] Error during graph streaming: {str(e)}")
-            # Yield error chunk
+        # Try to acquire lock without blocking
+        lock_acquired = conversation_lock.acquire(blocking=False)
+        if not lock_acquired:
+            logger.warning(f"[CompletionAction] Conversation {conversation_id} is already being processed")
             yield StreamingChunk(
                 content=[],
-                response_metadata=ResponseMetadata(status=f"error: {str(e)}")
+                response_metadata=ResponseMetadata(
+                    status="error: Conversation is already being processed by another request"
+                )
             )
+            return
+        
+        try:
+            logger.info(f"STarting completion stream for conversation {conversation_id}")
+            # Initialize graph components
+            compiled_graph = self.graph_builder.get_compiled_graph(agents)
+            input_data = self._create_graph_input(message, attachments, metadata)
+            config = self._create_graph_config(user_id, conversation_id)
+            
+            # Start title generation in background (fire and forget)
+            try:
+                messages = await self._get_conversation_messages(config)
+                await self._start_title_generation_background(message, messages, conversation_id, auth_token)
+            except Exception as e:
+                logger.warning(f"[CompletionAction] Failed to start title generation: {str(e)}")
+            
+            # Main streaming flow
+            try:
+                annotation = {"app": {}}
+                last_chunk = None
+                
+                # Stream graph processing chunks
+                async for streaming_chunk, last_chunk in self._stream_graph_chunks(
+                    compiled_graph, 
+                    input_data, 
+                    config, 
+                    annotation
+                ):
+                    yield streaming_chunk
+                
+                # Build and stream game files if available
+                if annotation["app"].get("latest"):
+                    container_id = annotation["app"]["latest"]["container_id"]
+                    async for game_chunk in self._build_game_files(
+                        container_id, 
+                        conversation_id, 
+                        annotation, 
+                        config
+                    ):
+                        yield game_chunk
+                
+                # Send final completion chunk
+                if last_chunk:
+                    last_chunk.response_metadata.status = StreamingStatus.FINISHED
+                    yield last_chunk
+                    
+            except Exception as e:
+                logger.error(f"[CompletionAction] Error during graph streaming: {str(e)}")
+                # Yield error chunk
+                yield StreamingChunk(
+                    content=[],
+                    response_metadata=ResponseMetadata(status=f"error: {str(e)}")
+                )
+        
+        finally:
+            # Always release the lock
+            conversation_lock.release()
+            
+            # Cleanup lock if no longer needed (optional, prevents memory leak)
+            with self._locks_cleanup_lock:
+                if conversation_id in self._conversation_locks:
+                    # Only delete if lock is not held by anyone
+                    if not self._conversation_locks[conversation_id].locked():
+                        del self._conversation_locks[conversation_id]
 
     def clear_all_cache(self) -> None:
         """Clear all cached compiled graphs and conversation mappings."""
