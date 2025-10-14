@@ -46,7 +46,7 @@ class CompletionAction:
         self.minio_builder = games_processor
         self.kafka_producer = KafkaProducer()
 
-    def _send_error_message(self, conversation_id: str, error_message: str) -> None:
+    def _send_error_message(self, conversation_id: str, error_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         """Send error message to Kafka topic."""
         error_object = {
             "content": [
@@ -62,11 +62,12 @@ class CompletionAction:
                 "status": StreamingStatus.FINISHED
             }
         }
-        self.kafka_producer.produce(
-            topic=self.kafka_topic_response,
-            key=conversation_id,
-            value=error_object,
-        )
+        # self.kafka_producer.produce(
+        #     topic=self.kafka_topic_response,
+        #     key=conversation_id,
+        #     value=error_object,
+        # )
+        yield error_object
 
     # TODO: Remove this function when gRPC is tested
     # def _send_streaming_chunk(self, conversation_id: str, streaming_chunk: StreamingChunk) -> None:
@@ -242,7 +243,7 @@ class CompletionAction:
                         }
                         game_version += 1
 
-    async def _build_game_files(self, container_id: str, conversation_id: str, annotation: dict, config: dict) -> None:
+    async def _build_game_files(self, container_id: str, conversation_id: str, annotation: dict, config: dict) -> AsyncGenerator[StreamingChunk, None]:
         """Build game files if container ID is available."""
         try:
             logger.info(f"Building game files for container {container_id} in conversation {conversation_id}")
@@ -269,17 +270,20 @@ class CompletionAction:
             
             # TODO: Uncomment this when gRPC is tested
             # self._send_streaming_chunk(conversation_id, game_built_object)
+            print("Sending game built object", game_built_object.model_dump())
+            yield game_built_object
             
         except Exception as e:
             logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
 
-    def _send_final_chunk(self, last_chunk: StreamingChunk, conversation_id: str) -> None:
+    def _send_final_chunk(self, last_chunk: StreamingChunk, conversation_id: str) -> Optional[StreamingChunk]:
         """Send final completion chunk and flush producer."""
         if last_chunk:
             last_chunk.response_metadata.status = StreamingStatus.FINISHED
-            # TODO: Uncomment this when gRPC is tested
-            # self._send_streaming_chunk(conversation_id, last_chunk)
-            self.kafka_producer.flush(timeout=KAFKA_FLUSH_TIMEOUT)
+            print("Sending final chunk", last_chunk.model_dump())
+            
+            return last_chunk
+        return None
 
     @observe(as_type="generation")
     async def create_completion(
@@ -306,10 +310,11 @@ class CompletionAction:
             # Build game files if container ID is available
             if annotation["app"].get("latest"):
                 container_id = annotation["app"]["latest"]["container_id"]
-                await self._build_game_files(container_id, conversation_id, annotation, config)
+                async for _ in self._build_game_files(container_id, conversation_id, annotation, config):
+                    pass
             
             # Send final completion chunk
-            self._send_final_chunk(last_chunk, conversation_id)
+            _ = self._send_final_chunk(last_chunk, conversation_id)
                 
         except Exception as e:
             logger.error(f"Error during graph streaming: {str(e)}")
@@ -343,11 +348,12 @@ class CompletionAction:
             # Build game files if container ID is available
             if annotation["app"].get("latest"):
                 container_id = annotation["app"]["latest"]["container_id"]
-                await self._build_game_files(container_id, conversation_id, annotation, config)
+                async for game_chunk in self._build_game_files(container_id, conversation_id, annotation, config):
+                    yield game_chunk
             
             # Send final completion chunk
             if last_chunk:
-                last_chunk.response_metadata.status = FINISHED_STATUS
+                last_chunk.response_metadata.status = StreamingStatus.FINISHED
                 yield last_chunk
                 
         except Exception as e:
