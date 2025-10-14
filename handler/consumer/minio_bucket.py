@@ -28,6 +28,7 @@ class MinioBucketHandler(BaseMessageHandler):
         try:
             parsed_value = json.loads(value)
             bucket_notification = BucketNotification(**parsed_value)
+            logger.info("Received bucket notification: %s", bucket_notification.event_name)
             
             bucket_name = bucket_notification.get_bucket_name()
             await self._processor[bucket_name].process_notification(bucket_notification)

@@ -73,7 +73,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                 }
             )
             
-            print(f"Received completion request: {completion_object.model_dump()}")
+            logger.debug(f"Received completion request: {completion_object.model_dump()}")
             
             # Process completion and stream responses using asyncio.run
             async def async_generator():
@@ -121,11 +121,11 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     except StopAsyncIteration:
                         break
             finally:
-                print("Finishing loop completion gRPC for chat", request.conversation_id)
+                logger.info("Finishing loop completion gRPC for chat", request.conversation_id)
                 loop.close()
                 
         except Exception as e:
-            print(f"Error handling completion message: {str(e)} for chat {request.conversation_id}")
+            logger.error(f"Error handling completion message: {str(e)} for chat {request.conversation_id}")
             # Send error response
             error_chunk = completion_pb2.StreamingChunk(
                 content=[],
