@@ -14,6 +14,9 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
     def Completion(self, request, context): # type: ignore
         """Handle completion requests and stream responses."""
         try:
+            metadata = dict(context.invocation_metadata())
+            # Get authorization token
+            auth_token = metadata.get('authorization', '')
             # Convert protobuf request to our model
             completion_object = CompletionRequest(
                 user_id=request.user_id,
@@ -84,6 +87,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     agents=completion_object.agents,
                     attachments=completion_object.attachments,
                     metadata=completion_object.metadata,
+                    auth_token=auth_token,
                 ):
                     yield chunk
             
