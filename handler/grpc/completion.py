@@ -121,7 +121,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     except StopAsyncIteration:
                         break
             finally:
-                logger.info("Finishing loop completion gRPC for chat", request.conversation_id)
+                logger.info(f"Finishing loop completion gRPC for chat {request.conversation_id}")
                 loop.close()
                 
         except Exception as e:
