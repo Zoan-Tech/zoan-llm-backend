@@ -1,11 +1,9 @@
-import json
 import asyncio
-from typing import Generator
 
 from grpc_generated.completion import completion_pb2_grpc, completion_pb2
 from config.logging import get_logger, setup_logging
 from model.completion import CompletionRequest
-from action.completion import completion_action
+from action.completion import grpc_completion_action
 
 setup_logging()
 logger = get_logger()
@@ -80,7 +78,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
             
             # Process completion and stream responses using asyncio.run
             async def async_generator():
-                async for chunk in completion_action.create_completion_stream(
+                async for chunk in grpc_completion_action.create_completion_stream(
                     user_id=completion_object.user_id,
                     conversation_id=completion_object.conversation_id,
                     message=completion_object.message,
@@ -124,17 +122,12 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                         yield streaming_chunk
                     except StopAsyncIteration:
                         break
+                    except Exception as e:
+                        yield grpc_completion_action._create_error_chunk(str(e))
             finally:
                 logger.info(f"Finishing loop completion gRPC for chat {request.conversation_id}")
                 loop.close()
                 
         except Exception as e:
             logger.error(f"Error handling completion message: {str(e)} for chat {request.conversation_id}")
-            # Send error response
-            error_chunk = completion_pb2.StreamingChunk(
-                content=[],
-                response_metadata=completion_pb2.ResponseMetadata(
-                    status=f"error: {str(e)}"
-                )
-            )
-            yield error_chunk
+            yield grpc_completion_action._create_error_chunk(str(e))

@@ -96,6 +96,7 @@ class KafkaConsumer:
         bootstrap_servers: str = Config.KAFKA_BOOTSTRAP_SERVERS,
         group_id: str = Config.KAFKA_GROUP_ID,
         consumer_topics: list[str] = None,
+        max_workers: int = 10,
         *,
         enable_auto_commit: bool = False,
         auto_offset_reset: str = "earliest",
@@ -144,7 +145,6 @@ class KafkaConsumer:
         self.consumer.subscribe(self.consumer_topics)
 
         def _loop():
-            logger.info("[KafkaClient] Consumer started, subscribed to %s", self.consumer_topics)
             try:
                 while not self._stop.is_set():
                     msg = self.consumer.poll(poll_timeout)

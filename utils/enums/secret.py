@@ -44,4 +44,7 @@ class SecretEnum(Enum):
     
     # Webhook Configuration
     WEBHOOK_URL = "WEBHOOK_URL"
-    WEBHOOK_SECRET = "WEBHOOK_SECRET"
+    
+    # New configurations
+    MAX_WORKERS = "MAX_WORKERS"
+    GRPC_PORT = "GRPC_PORT"
