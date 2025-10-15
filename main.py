@@ -21,9 +21,9 @@ setup_logging()
 
 logger = get_logger()
 
-from api import (
+from config import Config
+from handler.router import (
     health_check,
-    # completion
 )
 
 # Global gRPC server and Kafka consumer
@@ -34,13 +34,13 @@ kafka_consumer = None
 def start_grpc_server():
     """Start the gRPC server in a separate thread."""
     global grpc_server
-    grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS))
     completion_pb2_grpc.add_CompletionServiceServicer_to_server( # type: ignore
         CompletionServiceServicer(), grpc_server
     )
     
     # Start gRPC server
-    listen_addr = '[::]:50051'
+    listen_addr = f'[::]:{Config.GRPC_PORT}'
     grpc_server.add_insecure_port(listen_addr)
     grpc_server.start()
     logger.info(f"gRPC server started on {listen_addr}")
@@ -65,12 +65,10 @@ def start_kafka_consumer():
         
         kafka_consumer = KafkaConsumer(
             asyncio_loop=loop,
-            consumer_topics=consumer_topics
+            consumer_topics=consumer_topics,
         )
         
         kafka_consumer.start_consumer(message_consumer.on_message)
-        
-        logger.info("Kafka consumer started successfully")
         
         # Keep the loop running
         loop.run_forever()
@@ -108,7 +106,7 @@ async def lifespan(app: FastAPI):
         kafka_consumer.close()
         logger.info("Kafka consumer stopped")
 
-from api.utils import custom_http_exception_handler, validation_exception_handler
+from handler.utils import custom_http_exception_handler, validation_exception_handler
 
 app = FastAPI(lifespan=lifespan)
 
