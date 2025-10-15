@@ -1,6 +1,6 @@
 import json
 from typing import Dict
-from action.completion import completion_action
+from action.completion import kafka_completion_action
 from config.logging import get_logger
 from model.completion import CompletionRequest
 from handler.consumer.base import BaseMessageHandler
@@ -18,7 +18,7 @@ class CompletionMessageHandler(BaseMessageHandler):
             completion_object = CompletionRequest(**parsed_value)
             logger.debug("Received completion request: %s", completion_object.model_dump())
             
-            await completion_action.create_completion(
+            await kafka_completion_action.create_completion(
                 user_id=completion_object.user_id,
                 conversation_id=completion_object.conversation_id,
                 message=completion_object.message,

@@ -67,3 +67,6 @@ class Config:
     QDRANT_LIBRARY_COLLECTION_NAME: str = os.environ.get(SecretEnum.QDRANT_LIBRARY_COLLECTION_NAME.value, Defaults.QDRANT_LIBRARY_COLLECTION_NAME)
     
     WEBHOOK_URL: str = os.environ.get(SecretEnum.WEBHOOK_URL.value, Defaults.WEBHOOK_URL)
+    
+    MAX_WORKERS: int = int(os.environ.get(SecretEnum.MAX_WORKERS.value, 10))
+    GRPC_PORT: int = int(os.environ.get(SecretEnum.GRPC_PORT.value, 50051))
