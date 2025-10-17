@@ -3,7 +3,7 @@ name: Deploy to VPS with Git Commit Tag
 on:
   push:
     branches:
-      - main
+      - dev
 
 jobs:
   deploy:
