@@ -1,5 +1,4 @@
 from typing import Any, Dict, Optional
-from langfuse import observe
 
 from langgraph.prebuilt import create_react_agent
 from langchain_core.tools import StructuredTool
@@ -13,9 +12,6 @@ from model import (
 from graph.chat_model import ChatModel
 from graph.builder.tool import ToolBuilder
 from prompt import BasePromptManager
-from graph.internal.base import BaseInternalAgent
-from graph.internal.game_generator import game_generator
-from graph.internal.primary_agent import primary_agent
 
 from utils.exception_handler import (
     PromptNotFoundError,
@@ -34,11 +30,6 @@ import re
 
 logger = get_logger()
 
-INTERNAL_AGENT: Dict[str, BaseInternalAgent] = {
-    primary_agent.SANITIZED_NAME: primary_agent,
-    game_generator.SANITIZED_NAME: game_generator,
-}
-
 class AgentBuilder:
     # Resource limits to prevent exhaustion attacks
     MAX_WORKFLOWS_PER_AGENT = 50
@@ -50,7 +41,6 @@ class AgentBuilder:
         self.tool_builder = tool_builder
         self.prompt_manager = prompt_manager
         self.PROMPT_AGENT_CONSTRUCTION = "Agent Construction"
-        self.PROMPT_PRIMARY_AGENT_CONSTRUCTION = "Primary Agent Construction"
     
     @safe_operation(default_return={})
     def _apply_response_mapping(self, raw: Dict[str, Any], mapping: Optional[Dict[str, str]]) -> Dict[str, Any]:
@@ -63,7 +53,6 @@ class AgentBuilder:
                 out[dst_key] = raw[src_key]
         return out
 
-    @observe(name="construct_agent_toolset")
     @safe_operation(default_return=[])
     def _construct_agent_toolset(self, workflows: list[AgentWorkflow]) -> list[StructuredTool]:
         """
@@ -166,7 +155,6 @@ class AgentBuilder:
             for workflow in workflows
         )
     
-    @observe(name="get_agent_construction_prompt")
     @graph_builder_exception_handler("Failed to get agent construction prompt")
     def _get_agent_construction_prompt(self, agent_config: AgentConfig) -> str:
         """
@@ -199,7 +187,6 @@ class AgentBuilder:
             if not workflow.steps:
                 logger.warning(f"[GraphBuilder] Workflow '{workflow.name}' has no steps")
 
-    @observe(name="build_agent")
     @graph_builder_exception_handler("Failed to build agent")
     def build_agent(self, agent_config: AgentConfig):
         """

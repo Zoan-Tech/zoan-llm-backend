@@ -94,6 +94,9 @@ class Processor(BaseProcessor):
             object_key=object_key,
             owner=bucket_notification.get_owner(),
             mimetype=bucket_notification.get_mimetype(),
+            metadata={
+                "image_size": img.size,
+            }
         )
         self.upsert_image(img, payload)
         

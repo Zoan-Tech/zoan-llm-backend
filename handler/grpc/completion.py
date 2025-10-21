@@ -124,6 +124,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                         break
                     except Exception as e:
                         yield grpc_completion_action._create_error_chunk(str(e))
+                        break
             finally:
                 logger.info(f"Finishing loop completion gRPC for chat {request.conversation_id}")
                 loop.close()

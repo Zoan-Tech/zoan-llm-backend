@@ -29,15 +29,19 @@ class ChatModel:
             raise ValueError(f"Unsupported model name: {model_name}")
         
     def _extra_openai_kwargs(self, model_name) -> dict:
-        return {
+        kwargs = {
             "use_responses_api": True,
-        } if 'gpt-5-mini' in model_name else {
-            "use_responses_api": True,
-            "reasoning": {
-                "effort": "medium",
+            "output_version":"responses/v1",
+            # "use_previous_response_id": True
+        }
+        
+        if 'gpt-5-mini' not in model_name:
+            kwargs["reasoning"] = {
+                "effort": "low",
                 "summary": "detailed",
             }
-        }
+        
+        return kwargs
         
     def _extra_anthropic_kwargs(self) -> dict:
         return {}

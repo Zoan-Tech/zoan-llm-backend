@@ -132,3 +132,4 @@ class QdrantPayload(BaseModel):
     object_key: str
     owner: str
     mimetype: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)

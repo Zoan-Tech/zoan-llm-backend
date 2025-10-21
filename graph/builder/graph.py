@@ -1,7 +1,6 @@
 import threading
 import copy
 from typing import Dict
-from langfuse import observe
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -16,7 +15,7 @@ from cache import GraphCache, graph_cache
 from prompt import BasePromptManager, langfuse_prompt_manager
 from graph.memory import Memory, memory
 from graph.internal.base import BaseInternalAgent
-from graph.internal.game_generator import game_generator
+from graph.internal.game_generator_v1 import game_generator_v1
 from graph.internal.primary_agent import primary_agent
 
 from module.client import ModuleClient, module_client
@@ -35,7 +34,7 @@ logger = get_logger()
 
 INTERNAL_AGENT: Dict[str, BaseInternalAgent] = {
     primary_agent.SANITIZED_NAME: primary_agent,
-    game_generator.SANITIZED_NAME: game_generator,
+    game_generator_v1.SANITIZED_NAME: game_generator_v1,
 }
 
 class GraphBuilder:
@@ -43,9 +42,6 @@ class GraphBuilder:
     Builds a graph for the agent workflow.
     Initializes the chat model and constructs tools based on the agent configuration.
     """
-    PROMPT_AGENT_CONSTRUCTION = "Agent Construction"
-    PROMPT_PRIMARY_AGENT_CONSTRUCTION = "Primary Agent Construction"
-
     def __init__(
         self,
         graph_cache: GraphCache = graph_cache,
@@ -109,7 +105,6 @@ class GraphBuilder:
 
         return successfully_added
 
-    @observe(name="build_graph")
     @graph_builder_exception_handler("Failed to build state graph")
     def build_graph(self, agents: list[AgentConfig]) -> CompiledStateGraph:
         """

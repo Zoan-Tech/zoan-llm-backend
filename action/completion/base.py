@@ -53,7 +53,7 @@ class BaseCompletionAction:
         return StreamingChunk(
             content=[
                 ChunkContent(
-                    type="text",
+                    type="error",
                     text=f"Error during processing: {error_message}",
                     agent=PRIMARY_AGENT,
                     index=0,
@@ -69,20 +69,69 @@ class BaseCompletionAction:
             last_chunk.response_metadata.status = StreamingStatus.FINISHED
             return last_chunk
         return None
+    
+    def _extract_tool_outputs(self, chunk, agent_name: str) -> List[ChunkContent]:
+        chunks = []
+        if chunk.type == "tool" and type(chunk.content) is str and chunk.name != "update_chat_title":
+            tool_output = """
+    ```python
+    {tool_name}() = "{tool_output}"
+    ```
+    """.format(tool_name=chunk.name, tool_output=chunk.content)
+            chunks.append(ChunkContent(
+                type="text",
+                text=tool_output,
+                agent=agent_name,
+                index=0,
+                url="",
+            ))
+            if chunk.name == "build_source" and chunk.status == 'success':
+                # Special handling for build_source tool to include game URL
+                logger.debug("Send game signal chunk")
+                game_url = chunk.content
+                if game_url:
+                    chunks.append(ChunkContent(
+                        type="game-signal",
+                        text="",
+                        agent=agent_name,
+                        index=0,
+                        url=game_url,
+                        game_version=str(game_url.split('/')[-2])
+                    ))
+                
+        return chunks
 
-    def _extract_reasoning_content(self, chunk, agent_name: str) -> List[ChunkContent]:
-        """Extract reasoning content from chunk's additional kwargs."""
-        content_list = []
-        if "reasoning" in chunk.additional_kwargs:
-            for summary in chunk.additional_kwargs["reasoning"].get("summary", []):
-                content_list.append(ChunkContent(
-                    type="text",
-                    text=summary.get("text", ""),
-                    agent=agent_name,
-                    index=summary.get("index", 0),
-                    url="",
-                ))
-        return content_list
+    def _extract_text_content(self, chunk, agent_name: str) -> List[ChunkContent]:
+        """Extract text content from chunk's additional kwargs."""
+        if chunk.type == "AIMessageChunk" and type(chunk.content) is list:
+            chunk_content_type = "text"
+            content_list = []
+            for message in chunk.content:
+                if type(message) is dict:
+                    if message.get("type") == "text":
+                        content_list.append(ChunkContent(
+                            type=chunk_content_type,
+                            text=message.get("text", ""),
+                            agent=agent_name,
+                            index=message.get("index", 0),
+                            url="",
+                        ))
+                    elif message.get("type") == "reasoning":
+                        reasoning_text = ""
+                        summaries = message.get("summary", [])
+                        for summary in summaries:
+                            if summary.get("type") == "summary_text":
+                                reasoning_text += summary.get("text", "")
+                                
+                        content_list.append(ChunkContent(
+                            type=chunk_content_type,
+                            text=reasoning_text,
+                            agent=agent_name,
+                            index=message.get("index", 0),
+                            url="",
+                        ))
+            return content_list
+        return []
 
     def _extract_message_content(self, chunk, agent_name: str) -> List[ChunkContent]:
         """Extract message content from chunk."""
@@ -102,11 +151,11 @@ class BaseCompletionAction:
         """Convert chunk content to the StreamingChunk model."""
         content_list = []
         
-        # Extract reasoning content
-        content_list.extend(self._extract_reasoning_content(chunk, agent_name))
+        # Extract tool outputs
+        content_list.extend(self._extract_tool_outputs(chunk, agent_name))
         
-        # Extract message content
-        content_list.extend(self._extract_message_content(chunk, agent_name))
+        # Extract text content
+        content_list.extend(self._extract_text_content(chunk, agent_name))
                 
         response_metadata = ResponseMetadata(
             status=chunk.response_metadata.get("status", "")
@@ -117,25 +166,16 @@ class BaseCompletionAction:
             response_metadata=response_metadata
         )
 
-    def _extract_annotations(self, chunk, annotation: Dict[str, Any]) -> None:
-        """Extract annotations from chunk content (modifies annotation dict in-place)."""
-        logger.debug(f"Extracted annotations from chunk: {chunk}")
-        if type(chunk.content) is list:    
-            for message in chunk.content:
-                if not isinstance(message, dict) or "annotations" not in message:
-                    continue
-                        
-        if chunk.additional_kwargs.get("tool_outputs"):
-            for tool_output in chunk.additional_kwargs["tool_outputs"]:
-                if tool_output.get("type") == "code_interpreter_call":
-                    annotation["app"]["latest"] = {
-                        "code": tool_output.get("code"),
-                        "container_id": tool_output.get("container_id")
-                    }
+    def _extract_code_interpreter_call(self, chunk, code_interpreter_call: list) -> None:
+        """Extract code_interpreter_call from chunk content (modifies annotation dict in-place)."""
+        if type(chunk.content) is list:
+            for content in chunk.content:
+                if type(content) is dict and content.get("type") == "code_interpreter_call":
+                    code_interpreter_call.append(content)
 
-    def _process_chunk(self, agent_name: str, chunk, annotation: Dict[str, Any]) -> StreamingChunk:
+    def _process_chunk(self, agent_name: str, chunk, code_interpreter_call: list) -> StreamingChunk:
         """Process chunk content and extract annotations."""
-        self._extract_annotations(chunk, annotation)
+        self._extract_code_interpreter_call(chunk, code_interpreter_call)
         return self._convert_chunk_content(chunk, agent_name)
     
     def _graph_image_input(self, attachments: List[Attachment]) -> List[Dict[str, Any]]:
@@ -183,13 +223,28 @@ class BaseCompletionAction:
         
         return graph_input
 
-    def _create_graph_config(self, user_id: str, conversation_id: str) -> Dict[str, Any]:
-        """Create configuration for graph execution."""
+    def _create_graph_config(
+        self, 
+        user_id: str, 
+        conversation_id: str, 
+        auth_token: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Create configuration for graph execution.
+        
+        Args:
+            user_id: ID of the user
+            conversation_id: ID of the conversation
+            auth_token: Authorization token for webhook calls (optional)
+            
+        Returns:
+            Configuration dictionary for graph execution
+        """
         return {
             "configurable": {
                 "user_id": user_id,
                 "thread_id": conversation_id,
-                "code": None,  # To be filled if found in annotations
+                "auth_token": auth_token,
             },
             "recursion_limit": DEFAULT_RECURSION_LIMIT,
         }

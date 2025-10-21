@@ -1,7 +1,6 @@
 from config.logging import get_logger
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field, create_model
-from langfuse import observe
 from langchain_core.tools import StructuredTool
 from langchain_core.runnables.config import RunnableConfig, ensure_config
 
@@ -103,7 +102,6 @@ class ToolBuilder:
             # infer_schema=False,  # uncomment if you hit inference shenanigans
         )
 
-    @observe(name="construct_module_tool")
     def _construct_tool(self, workflow_name: str, step_module: StepModule) -> Optional[StructuredTool]:
         """Construct a module tool with proper error handling."""
         try:
