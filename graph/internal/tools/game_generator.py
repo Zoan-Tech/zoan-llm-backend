@@ -43,6 +43,7 @@ def search_library(
     )
     
     search_result = f"Found {len(results)} results for query '{query}' with offset {offset}."
-    search_item = "\n".join([f"- Item {Config.MINIO_BROWSER_URL}/{object.payload['bucket']}/{object.payload['object_key']} with score {object.score}\n" for object in results])
+    search_item = "\n".join([
+        f"- Item {Config.MINIO_BROWSER_URL}/{object.payload['bucket']}/{object.payload['object_key']} with size {object.payload.get('metadata', {}).get('image_size')} and score {object.score}\n" for object in results])
     
     return f"{search_result}\n{search_item}"

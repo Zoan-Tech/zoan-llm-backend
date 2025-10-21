@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
 from langgraph.graph.state import CompiledStateGraph
@@ -13,7 +14,6 @@ from model import (
     Attachment,
     Metadata,
 )
-from action.chat_title_generator import chat_title_generator
 from action.completion.base import BaseCompletionAction, StreamingStatus, PRIMARY_AGENT
 
 logger = get_logger()
@@ -31,42 +31,12 @@ class GrpcCompletionAction(BaseCompletionAction):
         """Initialize the GrpcCompletionAction."""
         super().__init__()
 
-    async def _start_title_generation_background(
-        self,
-        user_message: str,
-        messages: List,
-        conversation_id: str,
-        auth_token: str
-    ) -> None:
-        """
-        Start title generation as a background task (fire and forget).
-        
-        Args:
-            user_message: The user's message
-            messages: Conversation history messages
-            conversation_id: ID of the conversation
-            auth_token: Authorization token for webhook
-        """
-        async def run_title_generation():
-            try:
-                await chat_title_generator.generate_and_update_title(
-                    user_message,
-                    messages, 
-                    conversation_id,
-                    auth_token=auth_token
-                )
-            except Exception as e:
-                logger.warning(f"[GrpcCompletionAction] Title generation failed: {str(e)}")
-        
-        # Create task without awaiting (fire and forget)
-        asyncio.create_task(run_title_generation())
-
     async def _stream_graph_chunks(
         self,
         compiled_graph: CompiledStateGraph,
         input_data: Dict[str, Any],
         config: Dict[str, Any],
-        annotation: Dict[str, Any]
+        code_interpreter_call: list
     ) -> AsyncGenerator[tuple[StreamingChunk, Optional[StreamingChunk]], None]:
         """
         Stream chunks from the graph execution.
@@ -89,19 +59,21 @@ class GrpcCompletionAction(BaseCompletionAction):
             subgraphs=True
         ):
             agent_name = self._extract_agent_name(agent)
-            streaming_chunk = self._process_chunk(agent_name, chunk[0], annotation)
+            streaming_chunk = self._process_chunk(agent_name, chunk[0], code_interpreter_call)
             last_chunk = streaming_chunk
             yield streaming_chunk, last_chunk
 
-    async def _build_game_files(self, container_id: str, conversation_id: str, annotation: dict, config: dict) -> AsyncGenerator[StreamingChunk, None]:
+    async def _build_game_files(self, conversation_id: str, code_interpreter_call: list) -> AsyncGenerator[StreamingChunk, None]:
         """Build game files and yield game signal chunk."""
         try:
-            logger.info(f"Building game files for container {container_id} in conversation {conversation_id}")
-            await self._extract_app_versions(annotation, config)
+            if len(code_interpreter_call) == 0:
+                return
+            
+            container_id = code_interpreter_call[0].get("container_id", "")
             minio_prefix = await self.minio_builder.build_openai_game_file(
                 container_id, 
                 thread_id=conversation_id,
-                annotation=annotation   
+                code_interpreter_call=code_interpreter_call   
             )
             
             chunk_content = ChunkContent(
@@ -118,7 +90,7 @@ class GrpcCompletionAction(BaseCompletionAction):
                 response_metadata=ResponseMetadata(status=StreamingStatus.COMPLETED)
             )
             
-            logger.debug("Sending game built object", game_built_object.model_dump())
+            logger.debug(f"Sending game built object {game_built_object.model_dump()}")
             yield game_built_object
             
         except Exception as e:
@@ -139,10 +111,12 @@ class GrpcCompletionAction(BaseCompletionAction):
         Create a completion and stream responses directly (for gRPC).
         
         This method orchestrates the entire completion flow:
-        1. Starts background title generation (if applicable)
-        2. Streams graph processing chunks
-        3. Builds and streams game files (if applicable)
-        4. Yields final completion chunk
+        1. Streams graph processing chunks
+        2. Builds and streams game files (if applicable)
+        3. Yields final completion chunk
+        
+        Note: Title generation is now handled by the Primary Agent as a tool,
+        not as a background task in the completion flow.
         
         Args:
             user_id: ID of the user
@@ -151,7 +125,7 @@ class GrpcCompletionAction(BaseCompletionAction):
             agents: List of agent configurations
             attachments: Optional list of attachments
             metadata: Additional metadata
-            auth_token: Authorization token for webhook calls
+            auth_token: Authorization token (passed to agents via config)
             
         Yields:
             StreamingChunk objects containing completion responses
@@ -163,12 +137,7 @@ class GrpcCompletionAction(BaseCompletionAction):
         lock_acquired = conversation_lock.acquire(blocking=False)
         if not lock_acquired:
             logger.warning(f"[GrpcCompletionAction] Conversation {conversation_id} is already being processed")
-            yield StreamingChunk(
-                content=[],
-                response_metadata=ResponseMetadata(
-                    status="error: Conversation is already being processed by another request"
-                )
-            )
+            yield self._create_error_chunk(str(e))
             return
         
         try:
@@ -176,46 +145,39 @@ class GrpcCompletionAction(BaseCompletionAction):
             # Initialize graph components
             compiled_graph = self.graph_builder.get_compiled_graph(agents)
             input_data = self._create_graph_input(message, attachments, metadata)
-            config = self._create_graph_config(user_id, conversation_id)
-            
-            # Start title generation in background (fire and forget)
-            try:
-                messages = await self._get_conversation_messages(config)
-                await self._start_title_generation_background(message, messages, conversation_id, auth_token)
-            except Exception as e:
-                logger.warning(f"[GrpcCompletionAction] Failed to start title generation: {str(e)}")
+            config = self._create_graph_config(user_id, conversation_id, auth_token)
             
             # Main streaming flow
             try:
-                annotation = {"app": {}}
+                code_interpreter_call = []
                 last_chunk = None
                 
                 # Stream graph processing chunks
-                async for streaming_chunk, last_chunk in self._stream_graph_chunks(
-                    compiled_graph, 
-                    input_data, 
-                    config, 
-                    annotation
-                ):
-                    yield streaming_chunk
+                try:
+                    async for streaming_chunk, last_chunk in self._stream_graph_chunks(
+                        compiled_graph, 
+                        input_data, 
+                        config, 
+                        code_interpreter_call
+                    ):
+                        yield streaming_chunk
+                except Exception as graph_error:
+                    logger.error(f"[GrpcCompletionAction] Error during graph chunk streaming: {str(graph_error)}", exc_info=True)
+                    raise  # Re-raise to be caught by outer exception handler
                 
                 # Build and stream game files if available
-                if annotation["app"].get("latest"):
-                    container_id = annotation["app"]["latest"]["container_id"]
-                    async for game_chunk in self._build_game_files(
-                        container_id, 
-                        conversation_id, 
-                        annotation, 
-                        config
-                    ):
-                        yield game_chunk
+                async for game_chunk in self._build_game_files(
+                    conversation_id, 
+                    code_interpreter_call, 
+                ):
+                    yield game_chunk
                 
                 # Send final completion chunk
                 if last_chunk:
                     yield self._create_final_chunk(last_chunk)
                     
             except Exception as e:
-                logger.error(f"[GrpcCompletionAction] Error during graph streaming: {str(e)}")
+                logger.error(f"[GrpcCompletionAction] Error during graph streaming: {str(e)}", exc_info=True)
                 yield self._create_error_chunk(str(e))
         
         finally:
