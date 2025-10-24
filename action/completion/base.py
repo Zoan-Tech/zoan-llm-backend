@@ -67,7 +67,7 @@ class BaseCompletionAction:
             content=[
                 ChunkContent(
                     type="text",
-                    text=f"",
+                    text="",
                     agent=PRIMARY_AGENT,
                     index=0,
                     url="",

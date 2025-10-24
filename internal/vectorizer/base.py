@@ -52,11 +52,10 @@ class BaseProcessor:
                 payload = QdrantPayload(
                     bucket=bucket_name,
                     object_key=object_key,
-                    mimetype=mimetype,
-                    owner=owner,
-                    media_name=media.media,
-                    index=idx,
                     content=content,
+                    index=idx,
+                    owner=owner,
+                    mimetype=mimetype,
                     metadata=media.metadata,
                 )
                 

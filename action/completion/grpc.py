@@ -52,8 +52,6 @@ class GrpcCompletionAction(BaseCompletionAction):
             subgraphs=True
         ):
             agent_name = self._extract_agent_name(agent)
-            with open("debug.log", "a") as f:
-                f.write(f"Agent: {agent_name}, Chunk: {chunk[0]}\n")
             streaming_chunk = self._process_chunk(agent_name, chunk[0])
             yield streaming_chunk
 

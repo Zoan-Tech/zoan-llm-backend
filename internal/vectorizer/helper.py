@@ -26,7 +26,7 @@ class MediaInfoGenerator:
                     "Sample Response Format:\n"
                     "Description: [detailed description of the image content, objects, style, colors, and any notable features] - 'Silver pixel-art spaceship, top-down'\n",
                     "Objects: [list of main objects in the image] - 'spaceship, stars, planets'\n"
-                    "Style: [artistic style of the image] - 'pixel art, retro video'"
+                    "Style: [artistic style of the image] - 'pixel art, retro video game'"
                     "Keep the response concise but informative."
                 )
             )
