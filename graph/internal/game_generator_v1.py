@@ -10,6 +10,7 @@ from graph.internal.tools.game_generator_v1 import (
     build_source,
 )
 from graph.internal.tools.game_generator import search_library
+from graph.internal.tools.planning_game_theme import plan_game_theme
 
 logger = get_logger()
 
@@ -45,6 +46,7 @@ class GameGeneratorV1(BaseInternalAgent):
             # debug_source,
             build_source,
             search_library,
+            plan_game_theme,
             web_search_tool,
         ]
     
