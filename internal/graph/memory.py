@@ -1,23 +1,17 @@
-from langchain.embeddings import init_embeddings
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.store.postgres import PostgresStore
 from utils.enums import *
 from config import Config
 from config.logging import get_logger
+from utils.model import Model
 
 logger = get_logger()
 
 class Memory:
-	EMBEDDING_MODEL = "openai:text-embedding-3-small"
-	EMBEDDING_DIM = 1536
-
 	def __init__(self):
 		self.saver = None
 		self.store = None
-		self.embeddings = init_embeddings(
-	  		self.EMBEDDING_MODEL,
-			api_key=Config.OPENAI_API_KEY,
-		)
+		self.embeddings = Model.openai_text_embedding_3_small
 		self._setup_graph_memory()
 
 	def _setup_graph_memory(self):

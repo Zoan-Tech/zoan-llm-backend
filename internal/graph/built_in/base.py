@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from prompt import BasePromptManager, langfuse_prompt_manager
+from internal.graph.builder.prompt import BasePromptManager, langfuse_prompt_manager
 
 class BaseInternalAgent(ABC):
     def __init__(

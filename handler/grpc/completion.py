@@ -1,6 +1,6 @@
 import asyncio
 
-from grpc_generated.completion import completion_pb2_grpc, completion_pb2
+from handler.grpc.grpc_generated.completion import completion_pb2_grpc, completion_pb2
 from config.logging import get_logger, setup_logging
 from model.completion import CompletionRequest
 from action.completion import grpc_completion_action

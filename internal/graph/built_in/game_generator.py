@@ -1,15 +1,17 @@
-from langgraph.prebuilt import create_react_agent
+from typing import Optional
+from langchain.agents import create_agent
 
 from config import Config
 from config.logging import get_logger
-from graph.internal.base import BaseInternalAgent
-from graph.internal.tools.game_generator_v1 import (
+from internal.graph.built_in.base import BaseInternalAgent
+from internal.graph.built_in.tools.game_generator import (
     init_or_load_game_source,
+    planning_game_theme,
     write_game_file,
     debug_source,
     build_source,
 )
-from graph.internal.tools.game_generator import search_library
+from internal.graph.legacy.tools.game_generator import search_library
 
 logger = get_logger()
 
@@ -34,29 +36,46 @@ class GameGeneratorV1(BaseInternalAgent):
         compiled_prompt = prompt.compile(**kwargs)
         return compiled_prompt
     
-    async def get_toolset(self):
+    def _get_provider_built_in_tool(self, provider: Optional[str] = None):
+        if provider == "openai":
+            return [
+                {"type": "web_search"}
+            ]
+        elif provider == "anthropic":
+            return [{
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": 5
+            }]
+        else:
+            return []
+    
+    async def get_toolset(self, provider: Optional[str] = None):
         """Get the tools available for game generation"""
-        web_search_tool = {
-            "type": "web_search"
-        }
-        return [
+        built_in_tools = self._get_provider_built_in_tool(provider)
+        
+        base_tools = [
             init_or_load_game_source,
+            search_library,
+            planning_game_theme,
             write_game_file,
             # debug_source,
             build_source,
-            search_library,
-            web_search_tool,
         ]
+        
+        base_tools.extend(built_in_tools)
+        return base_tools
     
     def get_agent(self, llm, system_prompt: str, **kwargs):
         """Create the agent with the LLM and tools"""
         from utils.loop_runner import loop_runner
+        provider = kwargs.get("provider", None)
         
-        toolset = loop_runner.run(self.get_toolset())
-        return create_react_agent(
+        toolset = loop_runner.run(self.get_toolset(provider))
+        return create_agent(
             model=llm,
             tools=list(toolset),
-            prompt=system_prompt,
+            system_prompt=system_prompt,
             name=self.SANITIZED_NAME,
         )
 

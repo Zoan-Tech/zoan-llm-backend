@@ -1,12 +1,12 @@
 from openai import AsyncOpenAI
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from utils.enums import *
 from utils.loop_runner import loop_runner
 
 from config import Config
 from config.logging import get_logger
-from graph.internal.base import BaseInternalAgent
-from graph.internal.tools.game_generator import search_library
+from internal.graph.built_in.base import BaseInternalAgent
+from internal.graph.legacy.tools.game_generator import search_library
 
 logger = get_logger()
 
@@ -45,10 +45,10 @@ class GameGenerator(BaseInternalAgent):
     
     def get_agent(self, llm, system_prompt: str, **kwargs):
         toolset = loop_runner.run(self.get_toolset())  # <-- runs on dedicated loop thread
-        return create_react_agent(
+        return create_agent(
             model=llm,
             tools=list(toolset),
-            prompt=system_prompt,
+            system_prompt=system_prompt,
             name=self.SANITIZED_NAME,
         )
         

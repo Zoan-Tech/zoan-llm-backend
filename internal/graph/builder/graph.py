@@ -8,17 +8,17 @@ from model import (
     AgentConfig,
 )
 
-from graph.chat_model import ChatModel
-from graph.builder.tool import ToolBuilder
-from graph.builder.agent import AgentBuilder
-from cache import GraphCache, graph_cache
-from prompt import BasePromptManager, langfuse_prompt_manager
-from graph.memory import Memory, memory
-from graph.internal.base import BaseInternalAgent
-from graph.internal.game_generator_v1 import game_generator_v1
-from graph.internal.primary_agent import primary_agent
+from internal.graph.chat_model import ChatModel
+from internal.graph.builder.tool import ToolBuilder
+from internal.graph.builder.agent import AgentBuilder
+from internal.cache import GraphCache, graph_cache
+from internal.graph.builder.prompt import BasePromptManager, langfuse_prompt_manager
+from internal.graph.memory import Memory, memory
+from internal.graph.built_in.base import BaseInternalAgent
+from internal.graph.built_in.game_generator import game_generator_v1
+from internal.graph.built_in.primary_agent import primary_agent
 
-from module.client import ModuleClient, module_client
+from internal.graph.builder.module.client import ModuleClient, module_client
 
 from utils.exception_handler import (
     GraphBuilderError,
@@ -82,6 +82,7 @@ class GraphBuilder:
         successfully_added = []
         
         for agent_config in agents:
+            provider = agent_config.model.split(":")[0]
             if not agent_config.is_enabled:
                 logger.debug(f"[GraphBuilder] Skipping disabled agent '{agent_config.name}'")
                 continue
@@ -91,7 +92,8 @@ class GraphBuilder:
                     
                     agent = INTERNAL_AGENT[_sanitize_name(agent_config.name.lower())].get_agent(
                         llm=self.chat_model._construct_llm_model(agent_config),
-                        system_prompt=agent_config.system_prompt
+                        system_prompt=agent_config.system_prompt,
+                        provider=provider,
                     )
                     successfully_added.append(agent)
                 else:

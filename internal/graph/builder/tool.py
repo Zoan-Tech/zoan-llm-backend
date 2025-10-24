@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, create_model
 from langchain_core.tools import StructuredTool
 from langchain_core.runnables.config import RunnableConfig, ensure_config
 
-from module.client import ModuleClient, ModType
+from internal.graph.builder.module.client import ModuleClient, ModType
 
 from model import (
     StepModule,

@@ -1,7 +1,7 @@
 from langgraph_supervisor import create_supervisor
 from config import Config
-from graph.internal.base import BaseInternalAgent
-from graph.internal.tools.primary_agent import update_chat_title
+from internal.graph.built_in.base import BaseInternalAgent
+from internal.graph.built_in.tools.primary_agent import zoan_internal_update_chat_title
 
 class PrimaryAgent(BaseInternalAgent):
     SANITIZED_NAME = "primary_agent"
@@ -17,7 +17,7 @@ class PrimaryAgent(BaseInternalAgent):
         return compiled_prompt
     
     def get_toolset(self):
-        return [update_chat_title]
+        return [zoan_internal_update_chat_title]
     
     def get_agent(self, llm, system_prompt: str, **kwargs):
         toolset = self.get_toolset()
@@ -27,7 +27,7 @@ class PrimaryAgent(BaseInternalAgent):
             tools=toolset,
             model=llm,
             prompt=system_prompt,
-            add_handoff_messages=False,
+            handoff_tool_prefix="zoan_internal_"
         )
         
 primary_agent = PrimaryAgent()
