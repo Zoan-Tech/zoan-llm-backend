@@ -28,45 +28,47 @@ class ChatModel:
         else:
             raise ValueError(f"Unsupported model name: {model_name}")
         
-    def _extra_openai_kwargs(self, model_name) -> dict:
+    def _extra_openai_kwargs(self, is_primary: bool) -> dict:
         kwargs = {
             "use_responses_api": True,
             "output_version":"responses/v1",
             # "use_previous_response_id": True
         }
         
-        if 'gpt-5-mini' not in model_name:
+        if not is_primary:
             kwargs["reasoning"] = {
-                "effort": "low",
+                "effort": "high",
                 "summary": "detailed",
             }
-        
+        else:
+            kwargs["reasoning"] = None
+
         return kwargs
         
-    def _extra_anthropic_kwargs(self) -> dict:
+    def _extra_anthropic_kwargs(self, is_primary: bool) -> dict:
         return {}
     
-    def _audit_chat_model_config(self, model_name: str):
+    def _audit_chat_model_config(self, model_name: str, is_primary: bool = False) -> dict:
         kwargs = {}
         
         provider = self._get_provider(model_name)
         self._ensure_provider_api_key(provider)
         
         if provider == LLMProvider.OPENAI:
-            kwargs.update(self._extra_openai_kwargs(model_name))
+            kwargs.update(self._extra_openai_kwargs(is_primary))
         
         elif provider == LLMProvider.ANTHROPIC:
-            kwargs.update(self._extra_anthropic_kwargs())
+            kwargs.update(self._extra_anthropic_kwargs(is_primary))
         
         return kwargs
             
             
     def _construct_llm_model(self, agent_config: AgentConfig):
-        extra_kwargs = self._audit_chat_model_config(agent_config.model)
+        extra_kwargs = self._audit_chat_model_config(agent_config.model, agent_config.is_primary)
         return init_chat_model(
             model=agent_config.model,
             stream_usage=agent_config.stream_usage,
             timeout=120,
-            **agent_config.model_kwargs.model_dump(exclude_none=True),
+            **agent_config.model_kwargs.model_dump(exclude_none=True, include={"max_tokens"}),
             **extra_kwargs,
         )

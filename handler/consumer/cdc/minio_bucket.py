@@ -1,12 +1,12 @@
 import os
 import json
 from typing import Dict, Callable
-from handler.consumer.base import BaseMessageHandler
+from handler.consumer.cdc.base import BaseMessageHandler
 from model.minio_bucket import (
     BucketNotification,
 )
-from action.minio_processor.base import BaseProcessor
-from action.minio_processor.library import Processor as LibraryProcessor
+from action.cdc_handler.base import BaseProcessor
+from action.cdc_handler.minio_bucket.library import Processor as LibraryProcessor
 
 from config import Config
 from config.logging import get_logger
@@ -28,7 +28,6 @@ class MinioBucketHandler(BaseMessageHandler):
         try:
             parsed_value = json.loads(value)
             bucket_notification = BucketNotification(**parsed_value)
-            logger.info("Received bucket notification: %s", bucket_notification.event_name)
             
             bucket_name = bucket_notification.get_bucket_name()
             await self._processor[bucket_name].process_notification(bucket_notification)

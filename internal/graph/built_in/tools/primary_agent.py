@@ -6,13 +6,13 @@ from langchain_core.tools import tool
 from langchain_core.runnables.config import ensure_config
 
 from config.logging import get_logger
-from action.chat_title_generator import chat_title_generator
+from action.webhook_client.chat_title import chat_title as chat_title_webhook_client
 
 logger = get_logger()
 
 
 @tool
-def update_chat_title(
+def zoan_internal_update_chat_title(
     title: Annotated[str, "The chat title to set (concise, 3-7 words, descriptive of the conversation)"],
 ) -> str:
     """
@@ -46,14 +46,13 @@ def update_chat_title(
             logger.debug(f"[update_chat_title] Title truncated to 100 characters for {conversation_id}")
         
         # Update title via webhook
-        success = chat_title_generator.update_title(
+        success = chat_title_webhook_client.update_title(
             conversation_id=conversation_id,
             title=title,
             auth_token=auth_token
         )
         
         if success:
-            logger.info(f"[update_chat_title] Successfully updated title for {conversation_id} to '{title}'")
             return f"✅ Chat title updated to: {title}"
         else:
             logger.warning(f"[update_chat_title] Failed to update title for {conversation_id}")

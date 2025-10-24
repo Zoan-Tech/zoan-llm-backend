@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
+
 from langchain_core.tools import StructuredTool
 
 from model import (
@@ -9,9 +10,9 @@ from model import (
     AgentWorkflow,
 )
 
-from graph.chat_model import ChatModel
-from graph.builder.tool import ToolBuilder
-from prompt import BasePromptManager
+from internal.graph.chat_model import ChatModel
+from internal.graph.builder.tool import ToolBuilder
+from internal.graph.builder.prompt import BasePromptManager
 
 from utils.exception_handler import (
     PromptNotFoundError,
@@ -196,10 +197,10 @@ class AgentBuilder:
         self._validate_agent_config(agent_config)
         
         # Initialize the chat model
-        llm = self.chat_model._construct_llm_model(agent_config)
+        llm = self.chat_model._construct_llm_model(agent_config, is_primary=False)
 
         # Construct tools
         toolset = self._construct_agent_toolset(agent_config.workflows)
         
         # Create the react agent
-        return create_react_agent(llm, tools=toolset, prompt=agent_config.system_prompt, name=_sanitize_name(agent_config.name.lower()))
+        return create_agent(llm, tools=toolset, system_prompt=agent_config.system_prompt, name=_sanitize_name(agent_config.name.lower()))

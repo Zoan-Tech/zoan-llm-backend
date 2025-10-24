@@ -1,13 +1,17 @@
 import os
 import requests
 import shutil
+import os
+import requests
+import shutil
 from pathlib import Path   
-from typing import Annotated
+from typing import Annotated, List, Dict, Any
 from langchain_core.tools import tool
 from langchain_core.runnables.config import ensure_config
 
 from config.logging import get_logger
-from graph.internal.helper.minio_games import minio_games_helper
+from internal.graph.built_in.helper.minio_games import minio_games_helper
+from internal.graph.built_in.helper.planning_game_theme import game_theme_planner
 
 logger = get_logger()
 
@@ -16,6 +20,25 @@ def get_thread_data_path(thread_id: str) -> Path:
     """Get the data path for a thread"""
     return Path("data") / thread_id
 
+@tool
+def planning_game_theme(
+    candidate_images: Annotated[List[str], "List of image URLs from search_library results to analyze"],
+    game_requirements: Annotated[str, "User requirements or description for the game"]
+) -> str:
+    """
+    Analyze candidate images for their intended game asset purpose and generate suggested game themes strategically.
+    """
+    if not candidate_images:
+        return "Error: No candidate images provided. Use search_library() first to get image URLs."
+    
+    try:
+        result = game_theme_planner.analyze_comprehensive(candidate_images, game_requirements)
+        return result
+            
+    except Exception as e:
+        logger.error(f"Error in planning_game_theme: {e}")
+        return f"Error during theme planning: {str(e)}\n\nPlease continue with the process."
+    
 @tool
 def init_or_load_game_source() -> str:
     """
@@ -51,39 +74,18 @@ def init_or_load_game_source() -> str:
                 # Failed to download, create empty directory and instruct agent to build from scratch
                 os.makedirs(data_path, exist_ok=True)
                 return (
-                    f"⚠️ Failed to load {current_version} from MinIO. Starting fresh with {next_version}.\n\n"
-                    f"INSTRUCTIONS:\n"
-                    f"1. Use search_library() to find suitable game assets (images, audio, sprites)\n"
-                    f"2. Use write_game_file() to create all game files (index.html, CSS, JS)\n"
-                    f"3. Use write_game_assets() to download and add game assets\n"
-                    f"4. Use debug_source() to test the game locally\n"
-                    f"5. Use build_source('{next_version}') to upload to MinIO\n\n"
-                    f"Start by creating the complete game source from scratch."
+                    f"⚠️ Failed to load previous version: {current_version} from MinIO. Starting fresh with {next_version}."
                 )
             
             # Successfully loaded
             return (
-                f"✅ Successfully loaded {current_version}. Next version to build: {next_version}.\n\n"
-                f"INSTRUCTIONS:\n"
-                f"- Files are in data/{thread_id}/\n"
-                f"- Use search_library() to find new assets if needed\n"
-                f"- Modify existing files using write_game_file(content=...) if needed\n"
-                f"- Add/update assets using write_game_file(url=...) if needed\n"
-                f"- Use debug_source() to test changes\n"
-                f"- Use build_source('{next_version}') when ready to upload\n\n"
-                f"You can modify the loaded files or build as-is."
+                f"✅ Successfully loaded previous version: {current_version}. Next version to build: {next_version}."
             )
         else:
             # No versions found in MinIO, create empty directory
             data_path.mkdir(parents=True, exist_ok=True)
             return (
-                f"📁 No existing versions found in MinIO. Starting with v1.\n\n"
-                f"INSTRUCTIONS:\n"
-                f"1. Use search_library() to find suitable game assets (images, audio, sprites)\n"
-                f"2. Use write_game_file() to create game files (HTML, CSS, JS) and download assets (with url parameter)\n"
-                f"3. Use debug_source() to test the game locally\n"
-                f"4. Use build_source('{next_version}') to upload to MinIO\n\n"
-                f"Please construct the complete game source from scratch."
+                f"📁 No existing versions found in MinIO. Starting with v1."
             )
             
     except Exception as e:
@@ -93,12 +95,6 @@ def init_or_load_game_source() -> str:
         return (
             f"⚠️ Exception while accessing MinIO: {str(e)}\n\n"
             f"Starting fresh with v1.\n\n"
-            f"INSTRUCTIONS:\n"
-            f"1. Use search_library() to find suitable game assets (images, audio, sprites)\n"
-            f"2. Use write_game_file() to create game files (HTML, CSS, JS) and download assets (with url parameter)\n"
-            f"3. Use debug_source() to test the game locally\n"
-            f"4. Use build_source('v1') to upload to MinIO\n\n"
-            f"Please construct the complete game source from scratch."
         )
 
 
@@ -121,8 +117,8 @@ def write_game_file(
     Examples:
     - write_game_file("", "index.html", content="<html>...</html>", url="")
     - write_game_file("src/scenes", "GameScene.js", content="class GameScene...", url="")
-    - write_game_file("assets/images", "bg.png", content="", url="http://minio:9000/library/bg.png")
-    - write_game_file("assets/audio", "jump.mp3", content="", url="http://minio:9000/library/jump.mp3")
+    - write_game_file("assets/images", "bg.png", content="", url=<candidate_img_url>)
+    - write_game_file("assets/audio", "jump.mp3", content="", url=<candidate_img_url>)
     """
     config = ensure_config()
     configurable = config.get("configurable", {})

@@ -9,7 +9,7 @@ from config import Config
 logger = get_logger()
 
 
-class ChatTitleGenerator:
+class ChatTitle:
     """Simple synchronous chat title updater via webhook."""
     
     def update_title(
@@ -73,5 +73,5 @@ class ChatTitleGenerator:
 
 
 # Singleton instance
-chat_title_generator = ChatTitleGenerator()
+chat_title = ChatTitle()
 

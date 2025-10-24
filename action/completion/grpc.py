@@ -1,5 +1,3 @@
-import asyncio
-import json
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
 from langgraph.graph.state import CompiledStateGraph
@@ -9,15 +7,12 @@ from config.logging import get_logger
 from model import (
     AgentConfig,
     StreamingChunk,
-    ChunkContent,
-    ResponseMetadata,
     Attachment,
     Metadata,
 )
-from action.completion.base import BaseCompletionAction, StreamingStatus, PRIMARY_AGENT
+from action.completion.base import BaseCompletionAction
 
 logger = get_logger()
-
 
 class GrpcCompletionAction(BaseCompletionAction):
     """
@@ -36,7 +31,6 @@ class GrpcCompletionAction(BaseCompletionAction):
         compiled_graph: CompiledStateGraph,
         input_data: Dict[str, Any],
         config: Dict[str, Any],
-        code_interpreter_call: list
     ) -> AsyncGenerator[tuple[StreamingChunk, Optional[StreamingChunk]], None]:
         """
         Stream chunks from the graph execution.
@@ -50,7 +44,6 @@ class GrpcCompletionAction(BaseCompletionAction):
         Yields:
             Tuple of (streaming_chunk, last_chunk)
         """
-        last_chunk = None
         
         for agent, chunk in compiled_graph.stream(
             input_data, 
@@ -59,42 +52,10 @@ class GrpcCompletionAction(BaseCompletionAction):
             subgraphs=True
         ):
             agent_name = self._extract_agent_name(agent)
-            streaming_chunk = self._process_chunk(agent_name, chunk[0], code_interpreter_call)
-            last_chunk = streaming_chunk
-            yield streaming_chunk, last_chunk
-
-    async def _build_game_files(self, conversation_id: str, code_interpreter_call: list) -> AsyncGenerator[StreamingChunk, None]:
-        """Build game files and yield game signal chunk."""
-        try:
-            if len(code_interpreter_call) == 0:
-                return
-            
-            container_id = code_interpreter_call[0].get("container_id", "")
-            minio_prefix = await self.minio_builder.build_openai_game_file(
-                container_id, 
-                thread_id=conversation_id,
-                code_interpreter_call=code_interpreter_call   
-            )
-            
-            chunk_content = ChunkContent(
-                type="game-signal",
-                text="",
-                agent=PRIMARY_AGENT,
-                index=0,
-                url=f"{minio_prefix}/index.html",
-                game_version=str(minio_prefix.split('/')[-1])
-            )
-            
-            game_built_object = StreamingChunk(
-                content=[chunk_content],
-                response_metadata=ResponseMetadata(status=StreamingStatus.COMPLETED)
-            )
-            
-            logger.debug(f"Sending game built object {game_built_object.model_dump()}")
-            yield game_built_object
-            
-        except Exception as e:
-            logger.error(f"Failed to build game files for container {container_id}: {str(e)}")
+            with open("debug.log", "a") as f:
+                f.write(f"Agent: {agent_name}, Chunk: {chunk[0]}\n")
+            streaming_chunk = self._process_chunk(agent_name, chunk[0])
+            yield streaming_chunk
 
     @observe(as_type="generation")
     async def create_completion_stream(
@@ -149,32 +110,21 @@ class GrpcCompletionAction(BaseCompletionAction):
             
             # Main streaming flow
             try:
-                code_interpreter_call = []
-                last_chunk = None
                 
                 # Stream graph processing chunks
                 try:
-                    async for streaming_chunk, last_chunk in self._stream_graph_chunks(
+                    async for streaming_chunk in self._stream_graph_chunks(
                         compiled_graph, 
                         input_data, 
                         config, 
-                        code_interpreter_call
                     ):
                         yield streaming_chunk
                 except Exception as graph_error:
                     logger.error(f"[GrpcCompletionAction] Error during graph chunk streaming: {str(graph_error)}", exc_info=True)
                     raise  # Re-raise to be caught by outer exception handler
                 
-                # Build and stream game files if available
-                async for game_chunk in self._build_game_files(
-                    conversation_id, 
-                    code_interpreter_call, 
-                ):
-                    yield game_chunk
-                
                 # Send final completion chunk
-                if last_chunk:
-                    yield self._create_final_chunk(last_chunk)
+                yield self._create_final_chunk()
                     
             except Exception as e:
                 logger.error(f"[GrpcCompletionAction] Error during graph streaming: {str(e)}", exc_info=True)
