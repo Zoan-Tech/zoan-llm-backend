@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 from model.graph.builder import AgentConfig
 
@@ -26,14 +26,24 @@ class CompletionRequest(BaseModel):
         default_factory=Metadata,
         description="Additional metadata for the completion request"
     )
+
+# ChunkType constants
+class ChunkType:
+    TEXT = "text"
+    GAME_SIGNAL = "game_signal"
+    ERROR = "error"
     
 class ChunkContent(BaseModel):
     type: str = Field(..., description="Type of the content", json_schema_extra={"json": "type"})
-    text: str = Field(..., description="Text content", json_schema_extra={"json": "text"})
+    value: Any = Field(..., description="Text content", json_schema_extra={"json": "value"})
     agent: str = Field(..., description="Agent identifier", json_schema_extra={"json": "agent"})
-    index: float = Field(..., description="Index of the content", json_schema_extra={"json": "index"})
-    url: str = Field(..., description="URL associated with the content", json_schema_extra={"json": "url"})
-    game_version: str = Field(None, description="Game version identifier", json_schema_extra={"json": "game_version"})
+    index: int = Field(..., description="Index of the content", json_schema_extra={"json": "index"})
+    metadata: dict = Field(default_factory=dict, description="Additional metadata", json_schema_extra={"json": "metadata"})
+
+# StreamingStatus constants
+class StreamingStatus:
+    FINISHED = "finished"
+    COMPLETED = "completed"
     
 class ResponseMetadata(BaseModel):
     status: str = Field(..., description="Status of the response", json_schema_extra={"json": "status"})

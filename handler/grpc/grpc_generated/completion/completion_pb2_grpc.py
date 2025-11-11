@@ -5,26 +5,24 @@ import warnings
 
 from . import completion_pb2 as completion__pb2
 
-GRPC_GENERATED_VERSION = '1.75.1'
-GRPC_VERSION = getattr(grpc, '__version__', 'unknown')
+GRPC_GENERATED_VERSION = '1.74.0'
+GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
 try:
     from grpc._utilities import first_version_is_lower
-    if GRPC_VERSION != 'unknown':
-        _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
+    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
 except ImportError:
     _version_not_supported = True
 
-# Skip version check for now - the functionality should work with older versions
-# if _version_not_supported and GRPC_VERSION != 'unknown':
-#     raise RuntimeError(
-#         f'The grpc package installed is at version {GRPC_VERSION},'
-#         + f' but the generated code in completion_pb2_grpc.py depends on'
-#         + f' grpcio>={GRPC_GENERATED_VERSION}.'
-#         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
-#         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
-#     )
+if _version_not_supported:
+    raise RuntimeError(
+        f'The grpc package installed is at version {GRPC_VERSION},'
+        + f' but the generated code in completion_pb2_grpc.py depends on'
+        + f' grpcio>={GRPC_GENERATED_VERSION}.'
+        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
+        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
+    )
 
 
 class CompletionServiceStub(object):

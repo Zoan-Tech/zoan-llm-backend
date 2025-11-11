@@ -5,11 +5,9 @@ from typing import Optional, List, Any
 import numpy as np
 from io import BytesIO
 
-from qdrant_client.http import models as qm
-
 from internal.vectorizer.helper import media_info_generator
 from services.minio_library_client import minio_library_client
-from model.minio_bucket import QdrantPayload, MediaObject
+from model.minio_bucket import MediaObject
 
 from config.logging import get_logger
 from utils.enums import *

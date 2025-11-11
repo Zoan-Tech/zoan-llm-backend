@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 import base64
 import httpx
@@ -9,19 +10,18 @@ from typing import Dict, Any, List, Tuple, Optional
 
 from model import (
     StreamingChunk,
+    ChunkType,
     ChunkContent,
+    StreamingStatus,
     ResponseMetadata,
     Attachment,
     Metadata,
 )
 from internal.graph.builder.graph import GraphBuilder
+from langfuse.langchain import CallbackHandler
 
 # Constants and Configuration
 logger = get_logger()
-
-class StreamingStatus:
-    FINISHED = "finished"
-    COMPLETED = "completed"
 
 # Agent and Status Constants
 PRIMARY_AGENT = "supervisor"
@@ -41,6 +41,7 @@ class BaseCompletionAction:
     def __init__(self):
         """Initialize the BaseCompletionAction with required services."""
         self.graph_builder = GraphBuilder()
+        self.langfuse_handler = CallbackHandler()
         
         # Conversation-level locks to prevent concurrent processing of same conversation
         self._conversation_locks: Dict[str, threading.Lock] = defaultdict(threading.Lock)
@@ -51,11 +52,11 @@ class BaseCompletionAction:
         return StreamingChunk(
             content=[
                 ChunkContent(
-                    type="error",
-                    text=f"Error during processing: {error_message}",
+                    type=ChunkType.ERROR,
+                    value=f"Error during processing: {error_message}",
                     agent=PRIMARY_AGENT,
                     index=0,
-                    url="",
+                    metadata={}
                 )
             ],
             response_metadata=ResponseMetadata(status=StreamingStatus.FINISHED)
@@ -66,11 +67,11 @@ class BaseCompletionAction:
         return StreamingChunk(
             content=[
                 ChunkContent(
-                    type="text",
-                    text="",
+                    type=ChunkType.TEXT,
+                    value="",
                     agent=PRIMARY_AGENT,
                     index=0,
-                    url="",
+                    metadata={}
                 )
             ],
             response_metadata=ResponseMetadata(status=StreamingStatus.FINISHED)
@@ -82,30 +83,41 @@ class BaseCompletionAction:
             if chunk.name.startswith("zoan_internal") or chunk.name.startswith("transfer_back_"):
                 return chunks
             
-            tool_output = """
-    ```python
-    {tool_name}() = "{tool_output}"
-    ```
-    """.format(tool_name=chunk.name, tool_output=chunk.content)
+            chunk.content = json.loads(chunk.content)
+            
+            tool_output = (
+"""
+`{tool_name}()`
+
+```python
+{tool_output}
+```
+""".format(tool_name=chunk.name, tool_output=chunk.content)
+            )
             chunks.append(ChunkContent(
-                type="text",
-                text=tool_output,
+                type=ChunkType.TEXT,
+                value=tool_output,
                 agent=agent_name,
                 index=0,
-                url="",
+                metadata={}
             ))
             if chunk.name == "build_source" and chunk.status == 'success':
                 # Special handling for build_source tool to include game URL
                 logger.debug("Send game signal chunk")
-                game_url = chunk.content
-                if game_url:
+                build_response = json.loads(chunk.content)
+                game_version = build_response.get("version")
+                game_url = build_response.get("game_url")
+                
+                if game_url and game_version and build_response.get("status") != "failed":
                     chunks.append(ChunkContent(
-                        type="game-signal",
-                        text="",
+                        type=ChunkType.GAME_SIGNAL,
+                        value="",
                         agent=agent_name,
                         index=0,
-                        url=game_url,
-                        game_version=str(game_url.split('/')[-2])
+                        metadata={
+                            "game_url": game_url,
+                            "game_version": game_version
+                        }
                     ))
                 
         return chunks
@@ -113,17 +125,16 @@ class BaseCompletionAction:
     def _extract_text_content(self, chunk, agent_name: str) -> List[ChunkContent]:
         """Extract text content from chunk's additional kwargs."""
         if chunk.type == "AIMessageChunk" and type(chunk.content) is list:
-            chunk_content_type = "text"
             content_list = []
             for message in chunk.content:
                 if type(message) is dict:
                     if message.get("type") == "text":
                         content_list.append(ChunkContent(
-                            type=chunk_content_type,
-                            text=message.get("text", ""),
+                            type=ChunkType.TEXT,
+                            value=message.get("text", ""),
                             agent=agent_name,
                             index=message.get("index", 0),
-                            url="",
+                            metadata={}
                         ))
                     elif message.get("type") == "reasoning":
                         reasoning_text = ""
@@ -133,11 +144,11 @@ class BaseCompletionAction:
                                 reasoning_text += summary.get("text", "")
                                 
                         content_list.append(ChunkContent(
-                            type=chunk_content_type,
-                            text=reasoning_text,
+                            type=ChunkType.TEXT,
+                            value=reasoning_text,
                             agent=agent_name,
                             index=message.get("index", 0),
-                            url="",
+                            metadata={}
                         ))
             return content_list
         return []
@@ -148,11 +159,11 @@ class BaseCompletionAction:
         for message in chunk.content:
             if isinstance(message, dict) and message.get("type") == "text":
                 content_list.append(ChunkContent(
-                    type=message.get("type"),
-                    text=message.get("text", ""),
+                    type=ChunkType.TEXT,
+                    value=message.get("text", ""),
                     agent=agent_name,
                     index=message.get("index", 0),
-                    url=message.get("url", ""),
+                    metadata={}
                 ))
         return content_list
 
@@ -247,6 +258,7 @@ class BaseCompletionAction:
                 "thread_id": conversation_id,
                 "auth_token": auth_token,
             },
+            "callbacks": [self.langfuse_handler],
             "recursion_limit": DEFAULT_RECURSION_LIMIT,
         }
     

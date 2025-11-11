@@ -9,20 +9,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies and uv
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         libpq-dev \
         curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+# Add uv to PATH
+ENV PATH="/root/.local/bin:$PATH"
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+# Copy pyproject.toml first to leverage Docker cache
+COPY pyproject.toml .
+
+# Install Python dependencies using uv (much faster than pip)
+RUN uv pip install --system -e .
 
 # Create non-root user for security
 RUN adduser --disabled-password --gecos '' appuser

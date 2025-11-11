@@ -1,7 +1,6 @@
 install:
-	python3.11 -m venv .venv
-	. .venv/bin/activate && pip install --upgrade pip
-	. .venv/bin/activate && pip install -r requirements.txt
+	uv venv --allow-existing
+	uv pip install -e .
 
 run:
 	. .venv/bin/activate && uvicorn main:app

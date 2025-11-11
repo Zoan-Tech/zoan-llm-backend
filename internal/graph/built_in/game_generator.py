@@ -6,12 +6,16 @@ from config.logging import get_logger
 from internal.graph.built_in.base import BaseInternalAgent
 from internal.graph.built_in.tools.game_generator import (
     init_or_load_game_source,
-    planning_game_theme,
+    read_source_structure,
+    read_file,
+    str_replace_editor,
     write_game_file,
-    debug_source,
     build_source,
+    check_build_status,
+    clean_up,
 )
-from internal.graph.legacy.tools.game_generator import search_library
+
+from internal.graph.built_in.middleware.base import get_base_middleware
 
 logger = get_logger()
 
@@ -56,26 +60,35 @@ class GameGeneratorV1(BaseInternalAgent):
         
         base_tools = [
             init_or_load_game_source,
-            search_library,
-            planning_game_theme,
+            read_source_structure,
+            read_file,
+            str_replace_editor,
             write_game_file,
-            # debug_source,
             build_source,
+            check_build_status,
+            clean_up,
         ]
         
         base_tools.extend(built_in_tools)
         return base_tools
     
+    def get_middleware(self) -> list:
+        base_middleware = get_base_middleware()
+        
+        return base_middleware
+    
     def get_agent(self, llm, system_prompt: str, **kwargs):
         """Create the agent with the LLM and tools"""
         from utils.loop_runner import loop_runner
         provider = kwargs.get("provider", None)
-        
+
         toolset = loop_runner.run(self.get_toolset(provider))
+        middleware = self.get_middleware()
         return create_agent(
             model=llm,
             tools=list(toolset),
             system_prompt=system_prompt,
+            middleware=middleware,
             name=self.SANITIZED_NAME,
         )
 

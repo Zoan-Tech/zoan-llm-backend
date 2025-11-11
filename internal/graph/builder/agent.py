@@ -21,7 +21,7 @@ from utils.exception_handler import (
     safe_operation,
     validation_handler,
 )
-from utils.helper import _sanitize_name
+from langgraph_supervisor.handoff import _normalize_agent_name
 from utils.enums import *
 
 from config import Config
@@ -203,4 +203,4 @@ class AgentBuilder:
         toolset = self._construct_agent_toolset(agent_config.workflows)
         
         # Create the react agent
-        return create_agent(llm, tools=toolset, system_prompt=agent_config.system_prompt, name=_sanitize_name(agent_config.name.lower()))
+        return create_agent(llm, tools=toolset, system_prompt=agent_config.system_prompt, name=_normalize_agent_name(agent_config.name.lower()))

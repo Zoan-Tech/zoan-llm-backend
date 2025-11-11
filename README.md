@@ -60,22 +60,61 @@ docker-compose -f docker-compose.prod.yml up -d --build
 
 ## Manual Installation (Alternative)
 
+### Prerequisites
+
+Install [uv](https://github.com/astral-sh/uv) - An extremely fast Python package installer and resolver:
+
+```bash
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Verify installation
+uv --version
+```
+
 ### Initialize project
+
+Using `uv` (recommended - 10-100x faster than pip):
+
+```bash
+# Create virtual environment and install dependencies
+make install
+
+# Or manually:
+uv venv
+uv pip install -e .
+```
+
+Traditional method (slower):
 
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### Run the application
 
 ```bash
+# Using make (recommended)
+make run
+
 # Development server with auto-reload
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 # Production server
-uvicorn main:app --host 0.0.0.0 --port 8000
+uv run uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+## Make Commands
+
+```bash
+make install    # Create venv and install dependencies from pyproject.toml
+make run        # Run the application with uv
+make sync       # Sync dependencies (creates/updates uv.lock)
+make add        # Add a new package (Usage: make add PKG=package-name)
+make lock       # Update uv.lock file
+make all        # Install and run
 ```
 
 ## Docker Commands

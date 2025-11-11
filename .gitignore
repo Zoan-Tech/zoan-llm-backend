@@ -319,6 +319,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# uv
+.python-version
+uv.lock  # Uncomment to ignore lockfile (not recommended for reproducible builds)
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -401,3 +405,4 @@ tmp*
 *test*.py
 
 games/
+prompt_draft/

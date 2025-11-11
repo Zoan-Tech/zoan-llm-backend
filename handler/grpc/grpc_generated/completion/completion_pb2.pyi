@@ -129,20 +129,25 @@ class CompletionRequest(_message.Message):
     def __init__(self, user_id: _Optional[str] = ..., conversation_id: _Optional[str] = ..., message: _Optional[str] = ..., attachments: _Optional[_Iterable[_Union[Attachment, _Mapping]]] = ..., agents: _Optional[_Iterable[_Union[AgentConfig, _Mapping]]] = ..., metadata: _Optional[_Union[Metadata, _Mapping]] = ...) -> None: ...
 
 class ChunkContent(_message.Message):
-    __slots__ = ("type", "text", "agent", "index", "url", "game_version")
+    __slots__ = ("type", "value", "agent", "index", "metadata")
+    class MetadataEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     TYPE_FIELD_NUMBER: _ClassVar[int]
-    TEXT_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
     AGENT_FIELD_NUMBER: _ClassVar[int]
     INDEX_FIELD_NUMBER: _ClassVar[int]
-    URL_FIELD_NUMBER: _ClassVar[int]
-    GAME_VERSION_FIELD_NUMBER: _ClassVar[int]
+    METADATA_FIELD_NUMBER: _ClassVar[int]
     type: str
-    text: str
+    value: str
     agent: str
-    index: float
-    url: str
-    game_version: str
-    def __init__(self, type: _Optional[str] = ..., text: _Optional[str] = ..., agent: _Optional[str] = ..., index: _Optional[float] = ..., url: _Optional[str] = ..., game_version: _Optional[str] = ...) -> None: ...
+    index: int
+    metadata: _containers.ScalarMap[str, str]
+    def __init__(self, type: _Optional[str] = ..., value: _Optional[str] = ..., agent: _Optional[str] = ..., index: _Optional[int] = ..., metadata: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class ResponseMetadata(_message.Message):
     __slots__ = ("status",)

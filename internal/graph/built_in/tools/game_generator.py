@@ -1,53 +1,37 @@
 import os
 import requests
 import shutil
+import json
+import tarfile
 from pathlib import Path   
-from typing import Annotated, List, Dict, Any
+from typing import Annotated, List
 from langchain_core.tools import tool
 from langchain_core.runnables.config import ensure_config
 
 from config.logging import get_logger
 from internal.graph.built_in.helper.minio_games import minio_games_helper
-from internal.graph.built_in.helper.planning_game_theme import game_theme_planner
+from services.connector.app_preview import app_preview_client
+from model.client.app_preview import BuildRequest, BuildStatus
 
 logger = get_logger()
 
+GAME_TAR = "project.tar.gz"
+BUILD_COMPLETE_STATUSES = [
+    BuildStatus.FAILED.value,
+    BuildStatus.STOPPED.value,
+    BuildStatus.DELETED.value,
+    BuildStatus.RUNNING.value
+]
 
 def get_thread_data_path(thread_id: str) -> Path:
     """Get the data path for a thread"""
     return Path("data") / thread_id
-
-@tool
-def planning_game_theme(
-    candidate_images: Annotated[List[str], "List of image URLs from search_library results to analyze"],
-    game_requirements: Annotated[str, "User requirements or description for the game"]
-) -> str:
-    """
-    Analyze candidate images for their intended game asset purpose and generate suggested game themes strategically.
-    """
-    if not candidate_images:
-        return "Error: No candidate images provided. Use search_library() first to get image URLs."
-    
-    try:
-        result = game_theme_planner.analyze_comprehensive(candidate_images, game_requirements)
-        return result
-            
-    except Exception as e:
-        logger.error(f"Error in planning_game_theme: {e}")
-        return f"Error during theme planning: {str(e)}\n\nPlease continue with the process."
     
 @tool
-def init_or_load_game_source() -> str:
+def read_source_structure() -> str:
     """
-    Initialize or load the game source for the current thread.
-    - If source exists in MinIO (games/thread_id/v*), load the latest version to local data/thread_id/v*.
-    - If no source exists in MinIO, just create the data/thread_id directory.
-    - If loading fails, create empty directory for fresh start.
-    
-    Returns status message with instructions:
-    - On successful load: "Loaded version vX. Next version to build: vY. You can modify the loaded files or build as-is."
-    - On failed load: "Failed to load vX. Starting fresh with vY. Please construct the complete game source using write_game_file() and write_game_assets()."
-    - On no existing versions: "No existing versions found. Starting with v1. Please construct the complete game source using write_game_file() and write_game_assets()."
+    Read the current game source structure for the thread.
+    Returns a tree-like structure of all files and folders.
     """
     config = ensure_config()
     configurable = config.get("configurable", {})
@@ -55,45 +39,162 @@ def init_or_load_game_source() -> str:
     
     data_path = get_thread_data_path(thread_id)
     
-    # Try to load from MinIO
-    minio_prefix = f"{thread_id}/"
-    try:
-        folder_count = minio_games_helper._count_folders_in_thread(thread_id)
-        if folder_count > 0:
-            # Get latest version from MinIO
-            current_version = "v" + str(folder_count)
-            next_version = "v" + str(folder_count + 1)
-            source_path = f"{minio_prefix}{current_version}/"  # Ensure trailing slash
-            dest_path = str(data_path)  # Convert Path to string
+    if not data_path.exists():
+        return f"✗ Error: Data path does not exist: {data_path}"
+    
+    def build_tree(directory: Path, prefix: str = "", is_last: bool = True) -> list:
+        """Recursively build tree structure"""
+        lines = []
+        
+        try:
+            # Get all items in directory
+            items = sorted(directory.iterdir(), key=lambda x: (not x.is_dir(), x.name))
             
-            success = minio_games_helper._download_latest_game_version(thread_id, source_path, dest_path)
-            if not success:
-                # Failed to download, create empty directory and instruct agent to build from scratch
-                os.makedirs(data_path, exist_ok=True)
-                return (
-                    f"⚠️ Failed to load previous version: {current_version} from MinIO. Starting fresh with {next_version}."
-                )
-            
-            # Successfully loaded
-            return (
-                f"✅ Successfully loaded previous version: {current_version}. Next version to build: {next_version}."
-            )
-        else:
-            # No versions found in MinIO, create empty directory
-            data_path.mkdir(parents=True, exist_ok=True)
-            return (
-                f"📁 No existing versions found in MinIO. Starting with v1."
-            )
-            
-    except Exception as e:
-        logger.warning(f"Could not load from MinIO: {e}. Creating empty directory.")
-        # Create empty directory
-        data_path.mkdir(parents=True, exist_ok=True)
+            for i, item in enumerate(items):
+                is_last_item = i == len(items) - 1
+                current_prefix = "└── " if is_last_item else "├── "
+                
+                # Add current item
+                if item.is_dir():
+                    lines.append(f"{prefix}{current_prefix}{item.name}/")
+                    # Add children with updated prefix
+                    extension = "    " if is_last_item else "│   "
+                    lines.extend(build_tree(item, prefix + extension, is_last_item))
+                else:
+                    lines.append(f"{prefix}{current_prefix}{item.name}")
+        except PermissionError:
+            lines.append(f"{prefix}[Permission Denied]")
+        
+        return lines
+    
+    # Build the tree
+    tree_lines = [f"{data_path.name}/"]
+    tree_lines.extend(build_tree(data_path))
+    
+    return "\n".join(tree_lines)
+        
+@tool
+def init_or_load_game_source() -> str:
+    """
+    Initialize or load the game source for the current conversation.
+    """
+    config = ensure_config()
+    configurable = config.get("configurable", {})
+    thread_id = configurable.get("thread_id", "default")
+    
+    data_path = get_thread_data_path(thread_id)
+    
+    folder_count = minio_games_helper._count_folders_in_thread(thread_id)
+    if folder_count > 0:
+        # Get latest version from MinIO
+        current_version = "v" + str(folder_count)
+        next_version = "v" + str(folder_count + 1)
+        
+        source_path = f"{thread_id}/{current_version}/{GAME_TAR}"
+        
+        minio_games_helper._download_game_version(source_path, data_path, source_type="file")
+        
+        # Extract the tar.gz file
+        tar_file_path = data_path / GAME_TAR
+        if tar_file_path.exists():
+            with tarfile.open(tar_file_path, "r:gz") as tar:
+                tar.extractall(path=data_path)
+            # Remove the tar file after extraction
+            tar_file_path.unlink()
+        
         return (
-            f"⚠️ Exception while accessing MinIO: {str(e)}\n\n"
-            f"Starting fresh with v1.\n\n"
+            f"✅ Successfully loaded current version: {current_version}\n"
+            f"Structure:\n{read_source_structure.invoke({})}\n"
+            f"Next version will be: {next_version}\n"
         )
+    else:
+        # No versions found in MinIO, create empty directory
+        data_path.mkdir(parents=True, exist_ok=True)
+        # Init v1 by downloading default template
+        source_path = f"default"
+        
+        success = minio_games_helper._download_game_version(source_path, data_path, source_type="folder")
+        response = (
+            f"📁 No existing versions found in MinIO. Starting with v1.\n"
+        )
+        if success:
+            response += f"Read {data_path / 'README.md'} for init instructions.\n\n"
+        
+        return response
+        
+@tool
+def read_file(
+    file: Annotated[str, "Path to the file to read (relative to data/thread_id/)"]
+) -> str:
+    """
+    Read the content of a specified file within the thread's data directory.
+    
+    Parameters:
+    - file: Relative path to the file (e.g., "src/game/scenes/GameScene.ts")
+    
+    Returns: Content of the file as a string, or an error message if the file does not exist.
+    """
+    config = ensure_config()
+    configurable = config.get("configurable", {})
+    thread_id = configurable.get("thread_id", "default")
+    
+    data_path = get_thread_data_path(thread_id)
+    file_path = data_path / file
+    
+    if not file_path.exists():
+        return f"✗ Error: File does not exist: data/{thread_id}/{file}"
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return content
+    except Exception as e:
+        logger.error(f"Error reading file: {e}")
+        return f"✗ Error: {str(e)}"
 
+@tool
+def str_replace_editor(
+    file: Annotated[str, "Path to the file to perform string replacement on (relative to data/thread_id/)"],
+    original: Annotated[str, "The original string to be replaced in the file"],
+    replacement: Annotated[str, "The new string to replace the original with"]
+) -> str:
+    """
+    Replace a specific string/section in an existing file without rewriting the entire file.
+    
+    Parameters:
+    - file: Relative path to the file (e.g., "src/game/scenes/GameScene.ts")
+    - original: The exact string to find and replace (must match exactly)
+    - replacement: The new string to replace it with
+    
+    Example:
+    - Updating a score variable: original="let score = 0;", replacement="let score = 100;"
+    - Fixing a function: original="movePlayer() { ... }", replacement="movePlayer() { [new implementation] }"
+    
+    Returns: Success/failure message with the file path.
+    """
+    config = ensure_config()
+    configurable = config.get("configurable", {})
+    thread_id = configurable.get("thread_id", "default")
+    
+    data_path = get_thread_data_path(thread_id)
+    file_path = data_path / file
+    
+    if not file_path.exists():
+        return f"✗ Error: File does not exist: data/{thread_id}/{file}"
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        updated_content = content.replace(original, replacement)
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(updated_content)
+        
+        return f"✓ Successfully replaced text in file: data/{thread_id}/{file}"
+    except Exception as e:
+        logger.error(f"Error replacing text in file: {e}")
+        return f"✗ Error: {str(e)}"
 
 @tool
 def write_game_file(
@@ -103,19 +204,27 @@ def write_game_file(
     url: Annotated[str, "URL to download asset from (for assets). Leave empty if using content parameter."] = ""
 ) -> str:
     """
-    Write a game file to the local data directory OR download an asset from a URL.
+    Write COMPLETE file content to create new files or completely overwrite existing files.
     
-    Usage:
-    - For regular files (HTML, CSS, JS): provide 'content', leave 'url' empty
-    - For asset downloads (images, audio): provide 'url', leave 'content' empty
+    Two modes of operation:
+    1. **Write complete source files (HTML/CSS/JS/TS):** Provide 'content', leave 'url' empty
+       - Must provide FULL, COMPLETE file content
+       - No placeholders like "// ... rest of code ..." allowed
+       - Every function, class, and logic must be fully implemented
+       
+    2. **Download picked assets (images/audio):** Provide 'url', leave 'content' empty
+       - Downloads assets from web search results or other sources
     
     Path structure: data/thread_id/<folder_path>/file_name
     
     Examples:
-    - write_game_file("", "index.html", content="<html>...</html>", url="")
-    - write_game_file("src/scenes", "GameScene.js", content="class GameScene...", url="")
-    - write_game_file("assets/images", "bg.png", content="", url=<candidate_img_url>)
-    - write_game_file("assets/audio", "jump.mp3", content="", url=<candidate_img_url>)
+    - write_game_file("", "package.json", content='{"name": "game", "dependencies": {...}}')
+    - write_game_file("src/app", "page.tsx", content="[COMPLETE React component code]")
+    - write_game_file("src/game/scenes", "GameScene.ts", content="[COMPLETE Phaser scene code]")
+    - write_game_file("public/assets/images", "player.png", url="https://example.com/player.png")
+    - write_game_file("public/assets/audio", "jump.mp3", url="https://example.com/jump.mp3")
+    
+    Returns: Success/failure message with the file path.
     """
     config = ensure_config()
     configurable = config.get("configurable", {})
@@ -160,147 +269,138 @@ def write_game_file(
         logger.error(f"Error writing/downloading file: {e}")
         return f"✗ Error: {str(e)}"
 
-
-
 @tool
-def debug_source() -> str:
+def check_build_status(
+    build_id: Annotated[str, "Build ID returned from build_source()"]
+) -> str:
     """
-    Debug the game source by:
-    1. Starting a local HTTP server on port 8080 in the data/thread_id directory
-    2. Setting up a /log endpoint to capture console logs
-    3. Making a request to localhost:8080
-    4. Capturing logs and errors
-    5. Analyzing and fixing any errors found
+    Check build status and retrieve the logs/preview URL of the deployed game.
     
-    Returns debug information and suggestions for fixes.
+    Parameters:
+    - build_id: The build ID from the build_source() response
     """
-    import subprocess
-    import time
-    import requests
-    from http.server import HTTPServer, SimpleHTTPRequestHandler
-    import threading
-    import json as json_module
-    
     config = ensure_config()
     configurable = config.get("configurable", {})
-    thread_id = configurable.get("thread_id", "default")
+    auth_token = configurable.get("auth_token", "")
     
-    data_path = get_thread_data_path(thread_id)
+    extra_headers = {
+        "Authorization": auth_token,
+        "Content-Type": "application/json",
+    }
     
-    if not data_path.exists():
-        return f"Error: Data path does not exist: {data_path}. Run init_or_load_game_source() first."
+    build_status = ""
+    build_response = None
     
-    # Store captured logs
-    captured_logs = []
+    try_count = 0
+    MAX_RETRIES = 3
     
-    # Custom HTTP handler that supports /log endpoint
-    class LogCapturingHandler(SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=str(data_path), **kwargs)
-        
-        def do_POST(self):
-            if self.path == '/log':
-                content_length = int(self.headers['Content-Length'])
-                post_data = self.rfile.read(content_length)
-                try:
-                    log_data = json_module.loads(post_data.decode('utf-8'))
-                    captured_logs.append(log_data)
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.end_headers()
-                    self.wfile.write(b'{"status": "ok"}')
-                except Exception as e:
-                    logger.error(f"Error processing log: {e}")
-                    self.send_response(500)
-                    self.end_headers()
-            else:
-                self.send_response(404)
-                self.end_headers()
-        
-        def log_message(self, format, *args):
-            # Suppress default logging
-            pass
-    
-    # Start HTTP server
-    server = None
-    server_thread = None
     try:
-        # Create and start server in a thread
-        server = HTTPServer(('localhost', 8080), LogCapturingHandler)
-        server_thread = threading.Thread(target=server.serve_forever)
-        server_thread.daemon = True
-        server_thread.start()
-        
-        # Wait for server to start
-        time.sleep(2)
-        
-        # Make request to localhost:8080
-        debug_info = []
-        try:
-            response = requests.get(f"http://localhost:8080/index.html", timeout=5)
-            status = response.status_code
-            text = response.text
-            debug_info.append(f"HTTP Status: {status}")
+        while build_status not in BUILD_COMPLETE_STATUSES and try_count < MAX_RETRIES:
+            # Get build status
+            build_response = app_preview_client.get_build_status(build_id, extra_headers=extra_headers)
             
-            if status == 200:
-                debug_info.append("✓ Successfully loaded index.html")
-                
-                # Check if console log capturing is implemented
-                if 'window.console.log' in text and 'fetch(\'/log\'' in text:
-                    debug_info.append("✓ Console log capturing is enabled")
-                else:
-                    debug_info.append("⚠ Warning: Console log capturing not found. Add this to your JS:")
-                    debug_info.append("  window.console.log = (...args) => {")
-                    debug_info.append("    fetch('/log', {")
-                    debug_info.append("      method: 'POST',")
-                    debug_info.append("      body: JSON.stringify({ logs: args }),")
-                    debug_info.append("      headers: { 'Content-Type': 'application/json' }")
-                    debug_info.append("    });")
-                    debug_info.append("  };")
-                
-            else:
-                debug_info.append(f"✗ Error loading index.html: HTTP {status}")
-                debug_info.append(f"Response: {text[:500]}")
-        except requests.exceptions.Timeout:
-            debug_info.append("✗ Request timed out")
-        except Exception as e:
-            debug_info.append(f"✗ Request error: {str(e)}")
+            if build_response and build_response.data:
+                response = {
+                    "build_response": build_response.data.model_dump()
+                }
+                json.dumps(build_response.data.model_dump())             
+                container_logs = app_preview_client.get_build_logs(build_id, extra_headers=extra_headers)
+                if container_logs and container_logs.data:
+                    response["container_logs"] = container_logs.data.model_dump()
+                    
+                return json.dumps(response) 
+            else:    
+                try_count += 1
         
-        # Wait a bit for any console logs to be captured
-        time.sleep(2)
-        
-        # Display captured logs
-        if captured_logs:
-            debug_info.append(f"\n📋 Captured Console Logs ({len(captured_logs)} entries):")
-            for i, log in enumerate(captured_logs[:10], 1):  # Limit to first 10 logs
-                debug_info.append(f"  {i}. {log}")
-            if len(captured_logs) > 10:
-                debug_info.append(f"  ... and {len(captured_logs) - 10} more")
-        else:
-            debug_info.append("\n📋 No console logs captured (page may not have loaded or no console.log calls)")
-        
-        return "\n".join(debug_info)
-        
+        return (
+            "Failed to get build status after multiple attempts.\n"
+            "Status: {status}\n"
+            "Message: {message}\n"
+            "Error: {error}"
+        ).format(
+            status=build_response.status,
+            message=build_response.message,
+            error=build_response.error
+        )
     except Exception as e:
-        logger.error(f"Error during debug: {e}")
-        return f"Error during debug: {str(e)}"
-    finally:
-        # Stop server
-        if server:
-            server.shutdown()
-            server.server_close()
-        if server_thread:
-            server_thread.join(timeout=2)
-
+        logger.error(f"Failed to get build status: {e}")
+        return f"❌ Error getting build status: {str(e)}"
 
 @tool
 def build_source(
     version: Annotated[str, "Version prefix for MinIO upload (e.g., 'v1', 'v2', 'v3')"]
 ) -> str:
     """
-    Build and upload the game source to MinIO.
-    Uploads all files from data/thread_id/ to MinIO with version prefix.
-    Path in MinIO: games/thread_id/{version}/
+    Upload game source and trigger build process for the input version.
+
+    Parameters:
+    - version: Version for the build, can be current or next (e.g., 'v1', 'v2', 'v3')
+    Returns: Build trigger confirmation message
+    """
+    config = ensure_config()
+    configurable = config.get("configurable", {})
+    thread_id = configurable.get("thread_id", "default")
+    auth_token = configurable.get("auth_token", "")
+    build_response = {}
+    object_name = f"{thread_id}/{version}/project.tar.gz"
+    
+    data_path = get_thread_data_path(thread_id)
+    
+    if not data_path.exists():
+        raise Exception(f"Data path does not exist: {data_path}. Run init_or_load_game_source() first.")
+
+    # Create tar.gz archive
+    tar_path = data_path.parent / f"{GAME_TAR}"
+    
+    try:
+        with tarfile.open(tar_path, "w:gz") as tar:
+            tar.add(str(data_path), arcname=".")
+        
+        # Upload to MinIO at {chatId}/{version}/project.tar.gz
+        logger.debug(f"Uploading to MinIO: {minio_games_helper.bucket}/{object_name}")
+        
+        minio_games_helper._upload_source_game(
+            source_path=tar_path,
+            dest_path=object_name,
+            source_type="file"
+        )
+        
+        # Trigger app-preview build
+        build_request = BuildRequest(
+            minio_bucket=minio_games_helper.bucket,
+            chat_id=thread_id,
+            version=version,
+        )
+        extra_headers = {
+            "Authorization": auth_token,
+            "Content-Type": "application/json",
+        }
+        
+        build_response = app_preview_client.build_app_preview(build_request, extra_headers=extra_headers)
+        build_response = build_response.data.model_dump() if build_response and build_response.data else {
+            'status': "failed",
+        }
+            
+    except Exception as e:
+        build_response.update({
+            'status': "failed"
+        })
+        logger.error(f"Failed to build and deploy source: {e}")
+    finally:
+        # Clean up local files
+        os.remove(tar_path)
+        return json.dumps(
+            {
+                **build_response,
+                "game_url": object_name,
+                "version": version
+            }
+        )
+
+@tool
+def clean_up():
+    """
+    Clean up local data directory for the current thread.
     """
     config = ensure_config()
     configurable = config.get("configurable", {})
@@ -308,13 +408,12 @@ def build_source(
     
     data_path = get_thread_data_path(thread_id)
     
-    if not data_path.exists():
-        raise Exception(f"Data path does not exist: {data_path}. Run init_or_load_game_source() first.")
-
-    dest_path = f"{thread_id}/{version}"
-    success = minio_games_helper._upload_source_game(thread_id, str(data_path), dest_path)
-    if success:
-        shutil.rmtree(data_path)
-        return f"{minio_games_helper.bucket}/{dest_path}/index.html"
-    else:
-        raise Exception("Failed to upload game source to MinIO.")
+    try:
+        if data_path.exists():
+            shutil.rmtree(data_path)
+            return f"✓ Successfully cleaned up data for thread: {thread_id}"
+        else:
+            return f"ℹ No data to clean for thread: {thread_id}"
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
+        return f"✗ Error during cleanup: {str(e)}"
