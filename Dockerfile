@@ -15,6 +15,9 @@ RUN apt-get update \
         build-essential \
         libpq-dev \
         curl \
+        graphviz \
+        libgraphviz-dev \
+        pkg-config \
     && rm -rf /var/lib/apt/lists/* \
     && curl -LsSf https://astral.sh/uv/install.sh | sh
 
