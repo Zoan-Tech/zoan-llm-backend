@@ -13,6 +13,7 @@ services:
     environment:
       - POSTGRES_CONN_STRING=${POSTGRES_CONN_STRING}
       - FERNET_SECRET=${FERNET_SECRET}
+      - DOCKER_BAKE=${DOCKER_BAKE}
     volumes:
       # Use named volumes to avoid permission issues
       - games:/app/games:rw

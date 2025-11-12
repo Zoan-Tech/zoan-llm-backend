@@ -24,11 +24,15 @@ RUN apt-get update \
 # Add uv to PATH
 ENV PATH="/root/.local/bin:$PATH"
 
-# Copy pyproject.toml first to leverage Docker cache
-COPY pyproject.toml .
+# Copy pyproject.toml and uv.lock first to leverage Docker cache
+COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies using uv (much faster than pip)
-RUN uv pip install --system -e .
+# Create virtual environment and install dependencies
+RUN uv venv /app/.venv \
+    && uv sync --frozen --no-dev
+
+# Add virtual environment to PATH
+ENV PATH="/app/.venv/bin:$PATH"
 
 # Create non-root user for security
 RUN adduser --disabled-password --gecos '' appuser

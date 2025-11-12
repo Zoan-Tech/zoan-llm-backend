@@ -1,6 +1,6 @@
 install:
-	uv venv --allow-existing
-	uv pip install -e .
+	uv venv --allow-existing --python python3.11
+	uv sync
 
 run:
 	. .venv/bin/activate && uvicorn main:app
