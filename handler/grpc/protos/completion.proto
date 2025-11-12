@@ -80,11 +80,10 @@ message CompletionRequest {
 // ============ ChunkContent ============
 message ChunkContent {
   string type = 1;
-  string text = 2;
+  string value = 2;
   string agent = 3;
-  float index = 4;
-  string url = 5;
-  string game_version = 6;
+  int32 index = 4;
+  map<string, string> metadata = 5;
 }
 
 // ============ ResponseMetadata ============

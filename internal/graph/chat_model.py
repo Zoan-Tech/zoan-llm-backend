@@ -1,4 +1,13 @@
 from langchain.chat_models import init_chat_model
+from langchain_core.rate_limiters import InMemoryRateLimiter
+
+rate_limiter = InMemoryRateLimiter(
+    requests_per_second=0.1,  # <-- Super slow! We can only make a request once every 10 seconds!!
+    check_every_n_seconds=0.1,  # Wake up every 100 ms to check whether allowed to make a request,
+    max_bucket_size=10,  # Controls the maximum burst size.
+)
+from langgraph_supervisor import create_supervisor
+
 from model import AgentConfig
 from config import Config
 from utils.exception_handler import AgentConfigurationError
@@ -69,6 +78,8 @@ class ChatModel:
             model=agent_config.model,
             stream_usage=agent_config.stream_usage,
             timeout=120,
+            max_retries=3,
+            rate_limiter=rate_limiter,
             **agent_config.model_kwargs.model_dump(exclude_none=True, include={"max_tokens"}),
             **extra_kwargs,
         )

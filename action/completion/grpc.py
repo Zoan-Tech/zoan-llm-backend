@@ -1,7 +1,6 @@
 from typing import Dict, Any, List, Optional, AsyncGenerator
 
 from langgraph.graph.state import CompiledStateGraph
-from langfuse import observe
 
 from config.logging import get_logger
 from model import (
@@ -49,13 +48,13 @@ class GrpcCompletionAction(BaseCompletionAction):
             input_data, 
             config=config, 
             stream_mode="messages", 
-            subgraphs=True
-        ):
+            subgraphs=True,
+        ):      
             agent_name = self._extract_agent_name(agent)
             streaming_chunk = self._process_chunk(agent_name, chunk[0])
+                
             yield streaming_chunk
 
-    @observe(as_type="generation")
     async def create_completion_stream(
         self,
         user_id: str,
@@ -96,13 +95,14 @@ class GrpcCompletionAction(BaseCompletionAction):
         lock_acquired = conversation_lock.acquire(blocking=False)
         if not lock_acquired:
             logger.warning(f"[GrpcCompletionAction] Conversation {conversation_id} is already being processed")
-            yield self._create_error_chunk(str(e))
+            yield self._create_error_chunk("Conversation is already being processed")
             return
         
         try:
             logger.info(f"Starting completion stream for conversation {conversation_id}")
             # Initialize graph components
             compiled_graph = self.graph_builder.get_compiled_graph(agents)
+            
             input_data = self._create_graph_input(message, attachments, metadata)
             config = self._create_graph_config(user_id, conversation_id, auth_token)
             
@@ -122,7 +122,9 @@ class GrpcCompletionAction(BaseCompletionAction):
                     raise  # Re-raise to be caught by outer exception handler
                 
                 # Send final completion chunk
-                yield self._create_final_chunk()
+                final_chunk = self._create_final_chunk()
+                logger.debug(f"[GrpcCompletionAction] Final chunk: {final_chunk}")
+                yield final_chunk
                     
             except Exception as e:
                 logger.error(f"[GrpcCompletionAction] Error during graph streaming: {str(e)}", exc_info=True)

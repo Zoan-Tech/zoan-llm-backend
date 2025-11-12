@@ -48,3 +48,6 @@ class SecretEnum(Enum):
     # New configurations
     MAX_WORKERS = "MAX_WORKERS"
     GRPC_PORT = "GRPC_PORT"
+
+    # App Preview Configuration
+    APP_PREVIEW_URL = "APP_PREVIEW_URL"

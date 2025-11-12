@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Tuple, Optional
 
 from model import (
     StreamingChunk,
+    ChunkType,
     ChunkContent,
     ResponseMetadata,
     Attachment,
@@ -53,11 +54,11 @@ class BaseCompletionAction:
         return StreamingChunk(
             content=[
                 ChunkContent(
-                    type="text",
-                    text=f"Error during processing: {error_message}",
+                    type=ChunkType.ERROR,
+                    value=f"Error during processing: {error_message}",
                     agent=PRIMARY_AGENT,
                     index=0,
-                    url="",
+                    metadata={}
                 )
             ],
             response_metadata=ResponseMetadata(status=StreamingStatus.FINISHED)
@@ -76,11 +77,11 @@ class BaseCompletionAction:
         if "reasoning" in chunk.additional_kwargs:
             for summary in chunk.additional_kwargs["reasoning"].get("summary", []):
                 content_list.append(ChunkContent(
-                    type="text",
-                    text=summary.get("text", ""),
+                    type=ChunkType.TEXT,
+                    value=summary.get("text", ""),
                     agent=agent_name,
                     index=summary.get("index", 0),
-                    url="",
+                    metadata={}
                 ))
         return content_list
 
@@ -90,11 +91,11 @@ class BaseCompletionAction:
         for message in chunk.content:
             if isinstance(message, dict) and message.get("type") == "text":
                 content_list.append(ChunkContent(
-                    type=message.get("type"),
-                    text=message.get("text", ""),
+                    type=ChunkType.TEXT,
+                    value=message.get("text", ""),
                     agent=agent_name,
                     index=message.get("index", 0),
-                    url=message.get("url", ""),
+                    metadata={}
                 ))
         return content_list
 
@@ -145,13 +146,20 @@ class BaseCompletionAction:
         for attachment in attachments:
             try:
                 image_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
-                
-                attachment_input.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{attachment.mime_type};base64,{image_data}",
+                attachment_input.extend([
+                    {
+                        "type": "text",
+                        "text": (
+                            "Image URL: {image_url}.\n".format(image_url=attachment.url)
+                        )
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{attachment.mime_type};base64,{image_data}",
+                        }
                     }
-                })
+                ])
             except Exception as e:
                 logger.error(f"Failed to fetch or encode image from {attachment.url}: {str(e)}")
                 continue
