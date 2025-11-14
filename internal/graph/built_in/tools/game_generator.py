@@ -118,7 +118,7 @@ def init_or_load_game_source() -> str:
             f"📁 No existing versions found in MinIO. Starting with v1.\n"
         )
         if success:
-            response += f"Read {data_path / 'README.md'} for init instructions.\n\n"
+            response += f"Read {data_path / 'README.md'} for init instructions."
         
         return response
         
@@ -290,12 +290,9 @@ def check_build_status(
     
     build_status = ""
     build_response = None
-    
-    try_count = 0
-    MAX_RETRIES = 3
-    
+
     try:
-        while build_status not in BUILD_COMPLETE_STATUSES and try_count < MAX_RETRIES:
+        while build_status not in BUILD_COMPLETE_STATUSES:
             # Get build status
             build_response = app_preview_client.get_build_status(build_id, extra_headers=extra_headers)
             
@@ -303,14 +300,8 @@ def check_build_status(
                 response = {
                     "build_response": build_response.data.model_dump()
                 }
-                json.dumps(build_response.data.model_dump())             
-                container_logs = app_preview_client.get_build_logs(build_id, extra_headers=extra_headers)
-                if container_logs and container_logs.data:
-                    response["container_logs"] = container_logs.data.model_dump()
                     
                 return json.dumps(response) 
-            else:    
-                try_count += 1
         
         return (
             "Failed to get build status after multiple attempts.\n"

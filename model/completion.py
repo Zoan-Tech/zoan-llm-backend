@@ -30,7 +30,7 @@ class CompletionRequest(BaseModel):
 # ChunkType constants
 class ChunkType:
     TEXT = "text"
-    GAME_SIGNAL = "game_signal"
+    GAME_SIGNAL = "game-signal"
     ERROR = "error"
     
 class ChunkContent(BaseModel):

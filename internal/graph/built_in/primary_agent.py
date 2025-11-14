@@ -30,9 +30,7 @@ class PrimaryAgent(BaseInternalAgent):
         return internal_tools + custom_handoff_tools
     
     def get_middleware(self) -> list:
-        base_middleware = get_base_middleware(
-            include_image_extraction=False
-        )
+        base_middleware = get_base_middleware()
         return base_middleware
     
     def get_agent(self, llm, system_prompt: str, **kwargs):

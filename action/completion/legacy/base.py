@@ -55,7 +55,7 @@ class BaseCompletionAction:
             content=[
                 ChunkContent(
                     type=ChunkType.ERROR,
-                    value=f"Error during processing: {error_message}",
+                    value="Error during processing, please try again.",
                     agent=PRIMARY_AGENT,
                     index=0,
                     metadata={}
