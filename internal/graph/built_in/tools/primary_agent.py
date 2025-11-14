@@ -1,14 +1,18 @@
 """
 Tools for the Primary Agent.
 """
+import httpx, base64
 from typing import Annotated
+import mimetypes
 from config import Config
 from langchain_core.runnables.config import ensure_config
 from langchain.tools import BaseTool, ToolRuntime, tool
+from langchain.tools import InjectedToolCallId
 from langgraph.types import Command
 
 from config.logging import get_logger
 from action.webhook_client.chat_title import chat_title as chat_title_webhook_client
+from langchain_core.messages import HumanMessage, ToolMessage
 
 from services.qdrant_library_client import qm, qdrant_library_client
 from internal.vectorizer.base import TEXT_EMBEDDING_MODEL
@@ -102,8 +106,9 @@ def create_handoff_tool(
 @tool
 def search_knowledge_hub(
     query: Annotated[str, "The search query, related to game specifications, features, or themes"],
-    offset: Annotated[int, "The offset for pagination, starting from 0, corresponds to the number of times the search has been performed."]
-) -> dict:
+    offset: Annotated[int, "The offset for pagination, starting from 0, corresponds to the number of times the search has been performed."],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+) -> Command:
     """Search the library for relevant game specification/game feature or game themes/assets.
     
     Returns search results with text content and image URLs that will be automatically 
@@ -140,45 +145,49 @@ def search_knowledge_hub(
     )
     
     # Collect image URLs from results
-    image_urls = []
-    search_items = []
+    human_messages = []
     
     for idx, result in enumerate(results):
-        object_key = result.payload.get("object_key", "N/A")
-        bucket = result.payload.get("bucket", "")
-        url = f"{Config.MINIO_BROWSER_URL}/{bucket}/{object_key}"
+        try:
+            bucket = result.payload.get("bucket")
+            object_key = result.payload.get("object_key")
+            
+            url = f"{Config.MINIO_BROWSER_URL}/{bucket}/{object_key}"
+            mime_type = result.payload.get("mimetype")
+            
+            if not mime_type:
+                mime_type, _ = mimetypes.guess_type(url)
+            response = httpx.get(url, timeout=10.0)
+            response.raise_for_status()
+            
+            encoded_image = base64.b64encode(response.content).decode("utf-8")  # Fixed variable name
+            description = result.payload.get("description", "No description available.")
+            human_messages.append(HumanMessage(
+                content=[
+                    {
+                        "type": "text",
+                        "text": f"Image: {object_key} {description}"
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{encoded_image}"
+                        }
+                    }
+                ]
+            ))
+        except Exception as e:
+            logger.error(f"[search_knowledge_hub] Error processing search result: {str(e)}", exc_info=True)
+            continue
         
-        # Check if this is an image file
-        if object_key.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg')):
-            image_urls.append({
-                "url": url,
-                "description": result.payload.get("content", "N/A"),
-                "metadata": result.payload.get("metadata", {})
-            })
-        
-        search_items.append(
-            (
-             "-- {idx}. {object} - Score: {score:.4f} --\n"
-             "  Content: {content}\n"
-             "  URL: {url}\n"
-             "  Metadata: {metadata}\n"
-            ).format(
-                idx=idx,
-                object=object_key,
-                score=result.score,
-                content=result.payload.get("content", "N/A"),
-                url=url,
-                metadata=result.payload.get("metadata", {}),
-            )
+    messsages = [
+        ToolMessage(
+            content=f"Found {len(human_messages)} results for query: '{query}'",
+            tool_call_id=tool_call_id
         )
-    
-    search_result = f"Found {len(results)} results for query '{query}' with offset {offset}."
-    search_text = f"{search_result}\n" + "\n".join(search_items)
+    ] + human_messages
     
     # Return structured data with both text and image URLs
-    return {
-        "text": search_text,
-        "image_urls": image_urls,
-        "total_results": len(results),
-        "total_images": len(image_urls)
-    }
+    return Command(update={
+        "messages": messsages
+    })

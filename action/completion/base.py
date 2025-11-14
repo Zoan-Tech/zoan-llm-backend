@@ -53,7 +53,7 @@ class BaseCompletionAction:
             content=[
                 ChunkContent(
                     type=ChunkType.ERROR,
-                    value=f"Error during processing: {error_message}",
+                    value="Error during processing, please try again.",
                     agent=PRIMARY_AGENT,
                     index=0,
                     metadata={}
@@ -83,13 +83,10 @@ class BaseCompletionAction:
             if chunk.name.startswith("zoan_internal") or chunk.name.startswith("transfer_back_"):
                 return chunks
             
-            chunk.content = json.loads(chunk.content)
-            
             tool_output = (
 """
-`{tool_name}()`
-
 ```python
+{tool_name} ->:
 {tool_output}
 ```
 """.format(tool_name=chunk.name, tool_output=chunk.content)
@@ -103,12 +100,12 @@ class BaseCompletionAction:
             ))
             if chunk.name == "build_source" and chunk.status == 'success':
                 # Special handling for build_source tool to include game URL
-                logger.debug("Send game signal chunk")
                 build_response = json.loads(chunk.content)
                 game_version = build_response.get("version")
                 game_url = build_response.get("game_url")
                 
                 if game_url and game_version and build_response.get("status") != "failed":
+                    logger.debug("Send game signal chunk")
                     chunks.append(ChunkContent(
                         type=ChunkType.GAME_SIGNAL,
                         value="",

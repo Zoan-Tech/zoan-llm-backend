@@ -84,6 +84,7 @@ class GameGeneratorV1(BaseInternalAgent):
 
         toolset = loop_runner.run(self.get_toolset(provider))
         middleware = self.get_middleware()
+        
         return create_agent(
             model=llm,
             tools=list(toolset),
