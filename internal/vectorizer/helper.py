@@ -7,7 +7,7 @@ from utils.model import Model
 from config.logging import get_logger
 logger = get_logger()
 
-MAX_TOKENS = 200
+MAX_TOKENS = 1000
 class MediaInfoGenerator:
     def __init__(self, model: str = Model.openai_gpt_5_mini, max_tokens: int = MAX_TOKENS, **kwargs):
         self.llm = init_chat_model(
