@@ -46,6 +46,7 @@ class Context(TypedDict):
 logger = get_logger()
 
 INTERNAL_AGENT: Dict[str, BaseInternalAgent] = {
+    'primary_agent': built_in_primary_agent,
     game_generator_v1.SANITIZED_NAME: game_generator_v1,
 }
 

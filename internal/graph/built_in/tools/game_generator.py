@@ -230,9 +230,9 @@ def init_or_load_game_source() -> str:
 def read_file(
     file: Annotated[str, "Path to the file to read (relative to data/thread_id/)"],
     tool_call_id: Annotated[str, InjectedToolCallId],
-) -> str:
+) -> Command:
     """
-    Read the content of a specified file within the thread's data directory.
+    Read the content of a specified file/image within the thread's data directory.
     
     Parameters:
     - file: Relative path to the file (e.g., "src/game/scenes/GameScene.ts")
@@ -273,9 +273,17 @@ def read_file(
                 ]
             })
         else:
+            content = ""
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            return content
+            return Command(update={
+                "messages": [
+                    ToolMessage(
+                        content=content,
+                        tool_call_id=tool_call_id
+                    ),
+                ]
+            })
     except Exception as e:
         logger.error(f"Error reading file: {e}")
         return f"✗ Error: {str(e)}"
