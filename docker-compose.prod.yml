@@ -6,8 +6,6 @@ services:
     container_name: zoan-llm-backend
     image: zoan-llm-backend:${IMAGE_TAG}
     build: .
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:

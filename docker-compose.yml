@@ -6,8 +6,6 @@ services:
     container_name: zoan-llm-backend
     image: zoan-llm-backend:latest
     build: .
-    ports:
-      - "8000:8003"
     env_file:
       - .env
     environment:
