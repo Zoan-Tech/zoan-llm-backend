@@ -6,7 +6,7 @@ from typing_extensions import TypedDict
 from langchain_core.caches import InMemoryCache
 from langgraph.cache.memory import InMemoryCache as GraphInMemoryCache
 from langchain_core.globals import set_llm_cache
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import AnyMessage, ToolMessage
 from langgraph.pregel import Pregel
 from langgraph._internal._runnable import RunnableCallable, RunnableConfig
 from langgraph.graph import END, START, StateGraph
@@ -145,8 +145,14 @@ class GraphBuilder:
         """Wrap agent to process its output correctly."""    
         def call_agent(state: dict, config: RunnableConfig) -> dict:
             output = agent.invoke(state, config)
+            messages = output["messages"]
+            if isinstance(messages[-1], ToolMessage):
+                messages = messages[-2:]
+            else:
+                messages = messages[-1:]
+                
             return {
-                "messages": output["messages"]
+                "messages": messages,
             }
         
         return RunnableCallable(call_agent)
@@ -244,3 +250,6 @@ class GraphBuilder:
             
             # Use the thread-safe cache method
             return self._get_or_create_graph_safely(agents_with_prompts)
+
+
+from langgraph_supervisor import create_handoff_tool

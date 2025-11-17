@@ -24,7 +24,7 @@ def extract_and_persist_images(state: AgentState, runtime: Runtime) -> dict[str,
         runtime.context["image_urls"] = image_urls_context + new_images
 
 def get_base_middleware(
-    max_tokens_before_summary=20000,
+    max_tokens_before_summary=10000,
     messages_to_keep=10,
     include_image_extraction=False,
 ) -> list:

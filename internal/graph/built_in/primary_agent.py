@@ -4,7 +4,6 @@ from config import Config
 from internal.graph.built_in.base import BaseInternalAgent
 from internal.graph.built_in.tools.primary_agent import (
     zoan_internal_update_chat_title,
-    search_knowledge_hub,
 )
 from internal.graph.built_in.middleware.base import get_base_middleware
 
@@ -24,7 +23,6 @@ class PrimaryAgent(BaseInternalAgent):
     def get_toolset(self, custom_handoff_tools: list = []) -> list:
         internal_tools = [
             zoan_internal_update_chat_title,
-            search_knowledge_hub,
         ]
         
         return internal_tools + custom_handoff_tools

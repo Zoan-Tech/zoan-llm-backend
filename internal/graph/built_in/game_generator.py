@@ -5,13 +5,13 @@ from config import Config
 from config.logging import get_logger
 from internal.graph.built_in.base import BaseInternalAgent
 from internal.graph.built_in.tools.game_generator import (
+    search_knowledge_hub,
     init_or_load_game_source,
     read_source_structure,
     read_file,
     str_replace_editor,
     write_game_file,
     build_source,
-    check_build_status,
     clean_up,
 )
 
@@ -59,13 +59,13 @@ class GameGeneratorV1(BaseInternalAgent):
         built_in_tools = self._get_provider_built_in_tool(provider)
         
         base_tools = [
+            search_knowledge_hub,
             init_or_load_game_source,
             read_source_structure,
             read_file,
             str_replace_editor,
             write_game_file,
             build_source,
-            check_build_status,
             clean_up,
         ]
         
