@@ -114,7 +114,7 @@ def search_knowledge_hub(
             logger.error(f"[search_knowledge_hub] Error processing search result: {str(e)}", exc_info=True)
             continue
         
-    messsages = [
+    messages = [
         ToolMessage(
             content=f"Found {len(human_messages)} results for query: '{query}'",
             tool_call_id=tool_call_id
@@ -123,7 +123,7 @@ def search_knowledge_hub(
     
     # Return structured data with both text and image URLs
     return Command(update={
-        "messages": messsages
+        "messages": messages
     })
     
 @tool

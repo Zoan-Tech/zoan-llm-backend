@@ -250,6 +250,3 @@ class GraphBuilder:
             
             # Use the thread-safe cache method
             return self._get_or_create_graph_safely(agents_with_prompts)
-
-
-from langgraph_supervisor import create_handoff_tool
