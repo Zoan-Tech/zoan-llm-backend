@@ -1,20 +1,30 @@
-import os
-import requests
-import shutil
+import base64
+import httpx
 import json
+import mimetypes
+import shutil
 import tarfile
-from pathlib import Path   
-from typing import Annotated, List
-from langchain_core.tools import tool
-from langchain_core.runnables.config import ensure_config
+from pathlib import Path
+from typing import Annotated
 
+import requests
+from langchain.tools import InjectedToolCallId
+from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.runnables.config import ensure_config
+from langchain_core.tools import tool
+from langgraph.types import Command
+
+from config import Config
 from config.logging import get_logger
 from internal.graph.built_in.helper.minio_games import minio_games_helper
-from services.connector.app_preview import app_preview_client
+from internal.vectorizer.base import TEXT_EMBEDDING_MODEL
 from model.client.app_preview import BuildRequest, BuildStatus
+from services.connector.app_preview import app_preview_client
+from services.qdrant_library_client import qm, qdrant_library_client
 
 logger = get_logger()
 
+SOURCE_TYPE = 'folder'
 GAME_TAR = "project.tar.gz"
 BUILD_COMPLETE_STATUSES = [
     BuildStatus.FAILED.value,
@@ -26,6 +36,95 @@ BUILD_COMPLETE_STATUSES = [
 def get_thread_data_path(thread_id: str) -> Path:
     """Get the data path for a thread"""
     return Path("data") / thread_id
+
+@tool
+def search_knowledge_hub(
+    query: Annotated[str, "The search query, related to game specifications, features, or themes"],
+    offset: Annotated[int, "The offset for pagination, starting from 0, corresponds to the number of times the search has been performed."],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+) -> Command:
+    """Search the library for relevant game specification/game feature or game themes/assets.
+    
+    Returns search results with text content and image URLs that will be automatically 
+    injected into the conversation for visual analysis.
+    """
+    config = ensure_config()
+    configurable = config.get("configurable", {})
+    user_id = configurable.get("user_id", None)
+    
+    filter_ = qm.Filter(
+        must=[
+            qm.FieldCondition(
+                key="owner",
+                match=qm.MatchAny(any=[user_id, "public"])
+            )
+        ]
+    ) if user_id else qm.Filter(
+        must=[
+            qm.FieldCondition(
+                key="owner",
+                match=qm.MatchAny(any=["public"])
+            )
+        ]
+    )
+    
+    text_vector = TEXT_EMBEDDING_MODEL.embed_query(query)
+        
+    results = qdrant_library_client.client.search(
+        collection_name=qdrant_library_client.collection_name,
+        query_vector=("text", text_vector),
+        query_filter=filter_,
+        limit=5,
+        offset=offset * 10,
+    )
+    
+    # Collect image URLs from results
+    human_messages = []
+    
+    for idx, result in enumerate(results):
+        try:
+            bucket = result.payload.get("bucket")
+            object_key = result.payload.get("object_key")
+            
+            url = f"{Config.MINIO_BROWSER_URL}/{bucket}/{object_key}"
+            mime_type = result.payload.get("mimetype")
+            
+            if not mime_type:
+                mime_type, _ = mimetypes.guess_type(url)
+            response = httpx.get(url, timeout=10.0)
+            response.raise_for_status()
+            
+            encoded_image = base64.b64encode(response.content).decode("utf-8")  # Fixed variable name
+            description = result.payload.get("description", "No description available.")
+            human_messages.append(HumanMessage(
+                content=[
+                    {
+                        "type": "text",
+                        "text": f"Image: {url}. {description}"
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{encoded_image}"
+                        }
+                    }
+                ]
+            ))
+        except Exception as e:
+            logger.error(f"[search_knowledge_hub] Error processing search result: {str(e)}", exc_info=True)
+            continue
+        
+    messages = [
+        ToolMessage(
+            content=f"Found {len(human_messages)} results for query: '{query}'",
+            tool_call_id=tool_call_id
+        )
+    ] + human_messages
+    
+    # Return structured data with both text and image URLs
+    return Command(update={
+        "messages": messages
+    })
     
 @tool
 def read_source_structure() -> str:
@@ -83,6 +182,7 @@ def init_or_load_game_source() -> str:
     thread_id = configurable.get("thread_id", "default")
     
     data_path = get_thread_data_path(thread_id)
+    data_path.mkdir(parents=True, exist_ok=True)
     
     folder_count = minio_games_helper._count_folders_in_thread(thread_id)
     if folder_count > 0:
@@ -90,17 +190,21 @@ def init_or_load_game_source() -> str:
         current_version = "v" + str(folder_count)
         next_version = "v" + str(folder_count + 1)
         
-        source_path = f"{thread_id}/{current_version}/{GAME_TAR}"
+        if SOURCE_TYPE == 'file':
+            source_path = f"{thread_id}/{current_version}/{GAME_TAR}"
+        else:
+            source_path = f"{thread_id}/{current_version}/"
         
-        minio_games_helper._download_game_version(source_path, data_path, source_type="file")
+        minio_games_helper._download_game_version(source_path, data_path, source_type=SOURCE_TYPE)
         
-        # Extract the tar.gz file
-        tar_file_path = data_path / GAME_TAR
-        if tar_file_path.exists():
-            with tarfile.open(tar_file_path, "r:gz") as tar:
-                tar.extractall(path=data_path)
-            # Remove the tar file after extraction
-            tar_file_path.unlink()
+        if SOURCE_TYPE == 'file':
+            # Extract the tar.gz file
+            tar_file_path = data_path / GAME_TAR
+            if tar_file_path.exists():
+                with tarfile.open(tar_file_path, "r:gz") as tar:
+                    tar.extractall(path=data_path)
+                # Remove the tar file after extraction
+                tar_file_path.unlink()
         
         return (
             f"✅ Successfully loaded current version: {current_version}\n"
@@ -109,25 +213,26 @@ def init_or_load_game_source() -> str:
         )
     else:
         # No versions found in MinIO, create empty directory
-        data_path.mkdir(parents=True, exist_ok=True)
         # Init v1 by downloading default template
-        source_path = f"default"
         
-        success = minio_games_helper._download_game_version(source_path, data_path, source_type="folder")
+        # source_path = f"default"
+        
+        # success = minio_games_helper._download_game_version(source_path, data_path, source_type="folder")
         response = (
             f"📁 No existing versions found in MinIO. Starting with v1.\n"
         )
-        if success:
-            response += f"Read {data_path / 'README.md'} for init instructions."
+        # if success:
+        #     response += f"Read {data_path / 'README.md'} for init instructions."
         
         return response
         
 @tool
 def read_file(
-    file: Annotated[str, "Path to the file to read (relative to data/thread_id/)"]
-) -> str:
+    file: Annotated[str, "Path to the file to read (relative to data/thread_id/)"],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+) -> Command:
     """
-    Read the content of a specified file within the thread's data directory.
+    Read the content of a specified file/image within the thread's data directory.
     
     Parameters:
     - file: Relative path to the file (e.g., "src/game/scenes/GameScene.ts")
@@ -144,10 +249,41 @@ def read_file(
     if not file_path.exists():
         return f"✗ Error: File does not exist: data/{thread_id}/{file}"
     
+    mimetype, _ = mimetypes.guess_type(file_path.as_posix())
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        return content
+        if mimetype and mimetype.startswith("image/"):
+            with open(file_path, 'rb') as f:
+                encoded_image = base64.b64encode(f.read()).decode('utf-8')
+            return Command(update={
+                "messages": [
+                    ToolMessage(
+                        content=f"Reading image file: data/{thread_id}/{file}",
+                        tool_call_id=tool_call_id
+                    ),
+                    HumanMessage(
+                        content=[
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mimetype};base64,{encoded_image}"
+                                }
+                            }
+                        ]
+                    )
+                ]
+            })
+        else:
+            content = ""
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            return Command(update={
+                "messages": [
+                    ToolMessage(
+                        content=content,
+                        tool_call_id=tool_call_id
+                    ),
+                ]
+            })
     except Exception as e:
         logger.error(f"Error reading file: {e}")
         return f"✗ Error: {str(e)}"
@@ -255,7 +391,6 @@ def write_game_file(
                 with open(file_path, 'wb') as f:
                     f.write(response.content)
                 path_display = f"{folder_path}/{file_name}" if folder_path else file_name
-                logger.info(f"Downloaded {url} to {file_path}")
                 return f"✓ Successfully downloaded asset: data/{thread_id}/{path_display}"
             else:
                 return f"✗ Error downloading {file_name}: HTTP {response.status_code}"
@@ -333,53 +468,38 @@ def build_source(
     thread_id = configurable.get("thread_id", "default")
     auth_token = configurable.get("auth_token", "")
     build_response = {}
-    object_name = f"{thread_id}/{version}/project.tar.gz"
+    if SOURCE_TYPE == 'file':
+        object_name = f"{thread_id}/{version}/{GAME_TAR}"
+    else:
+        object_name = f"{thread_id}/{version}/"
     
     data_path = get_thread_data_path(thread_id)
     
     if not data_path.exists():
         raise Exception(f"Data path does not exist: {data_path}. Run init_or_load_game_source() first.")
 
-    # Create tar.gz archive
-    tar_path = data_path.parent / f"{GAME_TAR}"
     
     try:
-        with tarfile.open(tar_path, "w:gz") as tar:
-            tar.add(str(data_path), arcname=".")
-        
-        # Upload to MinIO at {chatId}/{version}/project.tar.gz
-        logger.debug(f"Uploading to MinIO: {minio_games_helper.bucket}/{object_name}")
+        if SOURCE_TYPE == 'file':
+                # Create tar.gz archive
+            source_path = data_path.parent / f"{GAME_TAR}"
+            with tarfile.open(source_path, "w:gz") as tar:
+                tar.add(str(data_path), arcname=".")
+        else:
+            source_path = str(data_path)
         
         minio_games_helper._upload_source_game(
-            source_path=tar_path,
+            source_path=source_path,
             dest_path=object_name,
-            source_type="file"
+            source_type=SOURCE_TYPE
         )
         
-        # Trigger app-preview build
-        build_request = BuildRequest(
-            minio_bucket=minio_games_helper.bucket,
-            chat_id=thread_id,
-            version=version,
-        )
-        extra_headers = {
-            "Authorization": auth_token,
-            "Content-Type": "application/json",
-        }
-        
-        build_response = app_preview_client.build_app_preview(build_request, extra_headers=extra_headers)
-        build_response = build_response.data.model_dump() if build_response and build_response.data else {
-            'status': "failed",
-        }
-            
     except Exception as e:
         build_response.update({
             'status': "failed"
         })
         logger.error(f"Failed to build and deploy source: {e}")
     finally:
-        # Clean up local files
-        os.remove(tar_path)
         return json.dumps(
             {
                 **build_response,

@@ -6,7 +6,7 @@ from typing_extensions import TypedDict
 from langchain_core.caches import InMemoryCache
 from langgraph.cache.memory import InMemoryCache as GraphInMemoryCache
 from langchain_core.globals import set_llm_cache
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import AnyMessage, ToolMessage
 from langgraph.pregel import Pregel
 from langgraph._internal._runnable import RunnableCallable, RunnableConfig
 from langgraph.graph import END, START, StateGraph
@@ -46,6 +46,7 @@ class Context(TypedDict):
 logger = get_logger()
 
 INTERNAL_AGENT: Dict[str, BaseInternalAgent] = {
+    'primary_agent': built_in_primary_agent,
     game_generator_v1.SANITIZED_NAME: game_generator_v1,
 }
 
@@ -145,8 +146,14 @@ class GraphBuilder:
         """Wrap agent to process its output correctly."""    
         def call_agent(state: dict, config: RunnableConfig) -> dict:
             output = agent.invoke(state, config)
+            messages = output["messages"]
+            if isinstance(messages[-1], ToolMessage):
+                messages = messages[-2:]
+            else:
+                messages = messages[-1:]
+                
             return {
-                "messages": output["messages"]
+                "messages": messages,
             }
         
         return RunnableCallable(call_agent)
