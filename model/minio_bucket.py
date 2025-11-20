@@ -130,5 +130,15 @@ class QdrantPayload(BaseModel):
     """Payload structure for Qdrant vector database."""
     bucket: str
     object_key: str
+    content: str
+    index: int = 0
     owner: str
     mimetype: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    
+    
+class MediaObject(BaseModel):
+    """Representation of a media object stored in MinIO."""
+    media: Any
+    media_content: Optional[list[str]] = None
+    metadata : Dict[str, Any] = Field(default_factory=dict)

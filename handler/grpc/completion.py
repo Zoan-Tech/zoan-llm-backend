@@ -1,12 +1,33 @@
 import asyncio
 
-from grpc_generated.completion import completion_pb2_grpc, completion_pb2
+from handler.grpc.grpc_generated.completion import completion_pb2_grpc, completion_pb2
 from config.logging import get_logger, setup_logging
 from model.completion import CompletionRequest
 from action.completion import grpc_completion_action
 
 setup_logging()
 logger = get_logger()
+
+def _convert_to_protobuf(pydantic_chunk):
+    """Convert Pydantic StreamingChunk to Protobuf StreamingChunk."""
+    chunk_content = [
+        completion_pb2.ChunkContent(
+            type=content.type,
+            value=content.value,
+            agent=content.agent,
+            index=content.index,
+            metadata={k: str(v) for k, v in content.metadata.items()}
+        ) for content in pydantic_chunk.content
+    ]
+    
+    response_metadata = completion_pb2.ResponseMetadata(
+        status=pydantic_chunk.response_metadata.status
+    )
+    
+    return completion_pb2.StreamingChunk(
+        content=chunk_content,
+        response_metadata=response_metadata
+    )
 
 class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
     def Completion(self, request, context): # type: ignore
@@ -98,36 +119,24 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     try:
                         chunk = loop.run_until_complete(async_gen.__anext__())
                         
-                        # Convert our model to protobuf response
-                        chunk_content = [
-                            completion_pb2.ChunkContent(
-                                type=content.type,
-                                text=content.text,
-                                agent=content.agent,
-                                index=content.index,
-                                url=content.url,
-                                game_version=content.game_version or ""
-                            ) for content in chunk.content
-                        ]
-                        
-                        response_metadata = completion_pb2.ResponseMetadata(
-                            status=chunk.response_metadata.status
-                        )
-                        
-                        streaming_chunk = completion_pb2.StreamingChunk(
-                            content=chunk_content,
-                            response_metadata=response_metadata
-                        )
+                        # Convert Pydantic model to protobuf response
+                        streaming_chunk = _convert_to_protobuf(chunk)
                         
                         yield streaming_chunk
                     except StopAsyncIteration:
                         break
-                    except Exception as e:
-                        yield grpc_completion_action._create_error_chunk(str(e))
+                    except Exception as inner_error:
+                        logger.error(f"Error processing chunk: {str(inner_error)}", exc_info=True)
+                        # Reuse base.py method and convert to protobuf
+                        error_chunk = grpc_completion_action._create_error_chunk(str(inner_error))
+                        yield _convert_to_protobuf(error_chunk)
+                        break
             finally:
-                logger.info(f"Finishing loop completion gRPC for chat {request.conversation_id}")
+                logger.info(f"Finishing loop completion gRPC for chat {request.conversation_id}.")
                 loop.close()
                 
-        except Exception as e:
-            logger.error(f"Error handling completion message: {str(e)} for chat {request.conversation_id}")
-            yield grpc_completion_action._create_error_chunk(str(e))
+        except Exception as outer_error:
+            logger.error(f"Error handling completion message: {str(outer_error)} for chat {request.conversation_id}")
+            # Reuse base.py method and convert to protobuf
+            error_chunk = grpc_completion_action._create_error_chunk(str(outer_error))
+            yield _convert_to_protobuf(error_chunk)

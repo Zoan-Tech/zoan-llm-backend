@@ -70,3 +70,5 @@ class Config:
     
     MAX_WORKERS: int = int(os.environ.get(SecretEnum.MAX_WORKERS.value, 10))
     GRPC_PORT: int = int(os.environ.get(SecretEnum.GRPC_PORT.value, 50051))
+    
+    APP_PREVIEW_URL: str = os.environ.get(SecretEnum.APP_PREVIEW_URL.value, "http://localhost:3001/api/v1")

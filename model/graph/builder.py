@@ -1,7 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, Field, SecretStr
-import os
-from utils.helper import decrypt_token
+from pydantic import BaseModel, Field
 from utils.enums import SecretEnum
 
 class ModelKwargs(BaseModel):

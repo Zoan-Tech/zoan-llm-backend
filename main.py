@@ -12,7 +12,7 @@ from config.logging import setup_logging, get_logger
 import grpc
 from concurrent import futures
 from handler.grpc.completion import CompletionServiceServicer
-from grpc_generated.completion import completion_pb2_grpc
+from handler.grpc.grpc_generated.completion import completion_pb2_grpc
 
 from handler.consumer import message_consumer
 from services.connector.kafka_service import KafkaConsumer
@@ -30,6 +30,7 @@ from handler.router import (
 grpc_server = None
 grpc_thread = None
 kafka_consumer = None
+kafka_thread = None
 
 def start_grpc_server():
     """Start the gRPC server in a separate thread."""
@@ -81,6 +82,7 @@ def start_kafka_consumer():
 async def lifespan(app: FastAPI):
     # Startup
     global grpc_thread
+    global kafka_thread
     
     # Start gRPC server
     grpc_thread = threading.Thread(target=start_grpc_server, daemon=True)
