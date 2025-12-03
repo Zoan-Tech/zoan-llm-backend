@@ -2,6 +2,7 @@ from typing import Any
 
 from langchain.agents.middleware import SummarizationMiddleware, before_model, AgentState
 from langgraph.runtime import Runtime
+from utils.model import Model
 
 from internal.graph.built_in.helper.context import inject_images_from_tool_results
 
@@ -30,9 +31,13 @@ def get_base_middleware(
 ) -> list:
     base_middleware = [
         SummarizationMiddleware(
-            model="gpt-5-mini",
-            max_tokens_before_summary=max_tokens_before_summary,  # Trigger summarization at 4000 tokens
-            messages_to_keep=messages_to_keep,  # Keep last 20 messages after summary
+            model=Model.openai_gpt_5_mini,
+            trigger=[
+                ('tokens', max_tokens_before_summary),
+            ],
+            keep=(
+                'messages', messages_to_keep
+            )
         ),
     ]
     if include_image_extraction:

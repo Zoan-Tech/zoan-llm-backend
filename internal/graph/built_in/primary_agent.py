@@ -1,38 +1,46 @@
 from langchain.agents import create_agent
 
-from config import Config
 from internal.graph.built_in.base import BaseInternalAgent
+from internal.graph.built_in.tools.base import ProviderBuiltInTool, BuiltinToolName
 from internal.graph.built_in.tools.primary_agent import (
     zoan_internal_update_chat_title,
 )
+from model import AgentConfig
 from internal.graph.built_in.middleware.base import get_base_middleware
 
 class PrimaryAgent(BaseInternalAgent):
     SANITIZED_NAME = "supervisor"
-    PROMPT_PRIMARY_AGENT_CONSTRUCTION = "primary_agent_v1"
+    PROMPT_NAME = "primary_agent_v1"
     
-    def get_prompt(self, **kwargs) -> str:
-        prompt = self.prompt_manager.get_prompt(
-            self.PROMPT_PRIMARY_AGENT_CONSTRUCTION,
-            label=Config.LANGFUSE_PROMPT_LABEL,
-            version=Config.LANGFUSE_VERSION_ID,
-        )
-        compiled_prompt = prompt.compile(**kwargs)
-        return compiled_prompt
-    
-    def get_toolset(self, custom_handoff_tools: list = []) -> list:
+    def get_toolset(self, model: str, custom_handoff_tools: list = [], web_search: bool = False) -> list:
         internal_tools = [
             zoan_internal_update_chat_title,
         ]
         
+        if web_search:
+            if "openai" in model:
+                internal_tools.extend([ProviderBuiltInTool.OPENAI[BuiltinToolName.WEB_SEARCH]])
+            elif "anthropic" in model:
+                internal_tools.extend([ProviderBuiltInTool.ANTHROPIC[BuiltinToolName.WEB_SEARCH]])
+            else:
+                return []
+            
         return internal_tools + custom_handoff_tools
     
     def get_middleware(self) -> list:
         base_middleware = get_base_middleware()
         return base_middleware
     
-    def get_agent(self, llm, system_prompt: str, **kwargs):
-        toolset = self.get_toolset(custom_handoff_tools=kwargs.get("custom_handoff_tools", []))
+    def get_agent(self, agent_config: AgentConfig, **kwargs):
+        llm = self._construct_llm_model(agent_config)
+        toolset = self.get_toolset(
+            agent_config.model,
+            custom_handoff_tools=kwargs.get("custom_handoff_tools", []),
+            web_search=kwargs.get("web_search", False)
+        )
+        
+        system_prompt = self.get_prompt()
+        
         middleware = self.get_middleware()
 
         return create_agent(

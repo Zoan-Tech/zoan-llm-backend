@@ -1,33 +1,29 @@
+import html
+import re
 from typing import Any, Dict, Optional
 
 from langchain.agents import create_agent
-
+from langchain.chat_models import init_chat_model
 from langchain_core.tools import StructuredTool
+from langgraph_supervisor.handoff import _normalize_agent_name
 
+from config import Config
+from config.logging import get_logger
+from internal.graph.builder.prompt import BasePromptManager
+from internal.graph.builder.tool import ToolBuilder
 from model import (
     AgentConfig,
-    StepModule,
     AgentWorkflow,
+    StepModule,
 )
-
-from internal.graph.chat_model import ChatModel
-from internal.graph.builder.tool import ToolBuilder
-from internal.graph.builder.prompt import BasePromptManager
-
+from utils.enums import *
 from utils.exception_handler import (
-    PromptNotFoundError,
     AgentConfigurationError,
+    PromptNotFoundError,
     graph_builder_exception_handler,
     safe_operation,
     validation_handler,
 )
-from langgraph_supervisor.handoff import _normalize_agent_name
-from utils.enums import *
-
-from config import Config
-from config.logging import get_logger
-import html
-import re
 
 logger = get_logger()
 
@@ -37,8 +33,7 @@ class AgentBuilder:
     MAX_STEPS_PER_WORKFLOW = 100
     MAX_TOOLS_TOTAL = 200
     
-    def __init__(self, chat_model: ChatModel, tool_builder: ToolBuilder, prompt_manager: BasePromptManager):
-        self.chat_model = chat_model
+    def __init__(self, tool_builder: ToolBuilder, prompt_manager: BasePromptManager):
         self.tool_builder = tool_builder
         self.prompt_manager = prompt_manager
         self.PROMPT_AGENT_CONSTRUCTION = "Agent Construction"
@@ -92,6 +87,16 @@ class AgentBuilder:
     
         logger.debug(f"[GraphBuilder] Created {len(tools)} tools from {len(workflows)} workflows with {total_steps} total steps")
         return tools
+    
+    @classmethod
+    def _construct_llm_model(cls, agent_config: AgentConfig):
+        return init_chat_model(
+            model=agent_config.model,
+            stream_usage=agent_config.stream_usage,
+            timeout=120,
+            max_retries=2,
+            **agent_config.model_kwargs.model_dump(),
+        )
     
     def _sanitize_prompt_input(self, text: str) -> str:
         """
@@ -197,7 +202,7 @@ class AgentBuilder:
         self._validate_agent_config(agent_config)
         
         # Initialize the chat model
-        llm = self.chat_model._construct_llm_model(agent_config, is_primary=False)
+        llm = self._construct_llm_model(agent_config)
 
         # Construct tools
         toolset = self._construct_agent_toolset(agent_config.workflows)

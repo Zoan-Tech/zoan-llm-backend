@@ -31,20 +31,16 @@ class AgentWorkflow(BaseModel):
     steps: list[StepModule] = Field(..., description="List of steps in the agent workflow")
 
 class AgentConfig(BaseModel):
-    id: Optional[str] = Field(None, description="Unique identifier for the agent")
     name: str = Field(..., description="Name of the agent")
-    
-    model: str = Field(..., description="Model name")
-    model_kwargs: ModelKwargs = Field(default_factory=ModelKwargs, description="Additional model configuration")
-
     description: Optional[str] = Field(None, description="Description of the agent")
     instruction: Optional[str] = Field(None, description="Instruction for the agent")
     
-    system_prompt: Optional[str] = Field(None, description="System prompt for the agent")
+    model: str = Field(..., description="Model name")
+    model_kwargs: ModelKwargs = Field(default_factory=ModelKwargs, description="Additional model configuration")
     
     is_enabled: bool = Field(..., description="Whether the agent is enabled")
     is_primary: bool = Field(..., description="Whether the agent is the primary agent")
 
-    workflows: list[AgentWorkflow] = Field(..., description="List of agent workflows")
+    workflows: list[AgentWorkflow] = Field([], description="List of agent workflows")
     
     stream_usage: bool = Field(True, description="Whether to stream usage")

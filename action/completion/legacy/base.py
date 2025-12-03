@@ -80,7 +80,7 @@ class BaseCompletionAction:
                     type=ChunkType.TEXT,
                     value=summary.get("text", ""),
                     agent=agent_name,
-                    index=summary.get("index", 0),
+                    index=0,
                     metadata={}
                 ))
         return content_list
@@ -94,7 +94,7 @@ class BaseCompletionAction:
                     type=ChunkType.TEXT,
                     value=message.get("text", ""),
                     agent=agent_name,
-                    index=message.get("index", 0),
+                    index=0,
                     metadata={}
                 ))
         return content_list
@@ -250,24 +250,3 @@ class BaseCompletionAction:
                         }
                         game_version += 1
 
-    def clear_all_cache(self) -> None:
-        """Clear all cached compiled graphs and conversation mappings."""
-        self.graph_builder.graph_cache.clear_all_cache()
-
-    def force_cleanup_expired_cache(self) -> int:
-        """
-        Manually trigger cleanup of expired cache entries.
-        
-        Returns:
-            Number of expired entries removed.
-        """
-        return self.graph_builder.graph_cache.force_cleanup_expired_cache()
-
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """
-        Get statistics about the current cache state including expiration info.
-        
-        Returns:
-            Dictionary containing cache statistics.
-        """
-        return self.graph_builder.graph_cache.get_cache_stats()
