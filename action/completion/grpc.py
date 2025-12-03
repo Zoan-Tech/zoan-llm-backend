@@ -64,6 +64,7 @@ class GrpcCompletionAction(BaseCompletionAction):
         attachments: Optional[List[Attachment]] = None,
         metadata: Metadata = Metadata(),
         auth_token: str = "",
+        web_search: bool = False,
     ) -> AsyncGenerator[StreamingChunk, None]:
         """
         Create a completion and stream responses directly (for gRPC).
@@ -101,7 +102,7 @@ class GrpcCompletionAction(BaseCompletionAction):
         try:
             logger.info(f"Starting completion stream for conversation {conversation_id}")
             # Initialize graph components
-            compiled_graph = self.graph_builder.get_compiled_graph(agents)
+            compiled_graph = self.graph_builder.get_compiled_graph(agents, web_search=web_search)
             
             input_data = self._create_graph_input(message, attachments, metadata)
             config = self._create_graph_config(user_id, conversation_id, auth_token)

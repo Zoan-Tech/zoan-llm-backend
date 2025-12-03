@@ -41,12 +41,6 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                 user_id=request.user_id,
                 conversation_id=request.conversation_id,
                 message=request.message,
-                attachments=[
-                    {
-                        "url": att.url,
-                        "mime_type": att.mime_type
-                    } for att in request.attachments
-                ] if request.attachments else [],
                 agents=[
                     {
                         "id": agent.id,
@@ -91,22 +85,28 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     } for agent in request.agents
                 ],
                 metadata={
-                    "console_logs": request.metadata.console_logs
+                    "console_logs": request.metadata.console_logs,
+                    "attachments": [
+                        {
+                            "url": att.url,
+                            "mime_type": att.mime_type
+                        } for att in request.metadata.attachments
+                    ] if request.metadata.attachments else [],
+                    "web_search": request.metadata.web_search
                 }
             )
             
             logger.debug(f"Received completion request: {completion_object.model_dump()}")
-            
-            # Process completion and stream responses using asyncio.run
             async def async_generator():
                 async for chunk in grpc_completion_action.create_completion_stream(
                     user_id=completion_object.user_id,
                     conversation_id=completion_object.conversation_id,
                     message=completion_object.message,
                     agents=completion_object.agents,
-                    attachments=completion_object.attachments,
+                    attachments=completion_object.metadata.attachments,
                     metadata=completion_object.metadata,
                     auth_token=auth_token,
+                    web_search=completion_object.metadata.web_search,
                 ):
                     yield chunk
             

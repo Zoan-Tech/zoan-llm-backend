@@ -65,6 +65,8 @@ message Attachment {
 // ============ Metadata ============
 message Metadata {
   string console_logs = 1;
+  repeated Attachment attachments = 2;
+  bool web_search = 3;
 }
 
 // ============ CompletionRequest ============
@@ -72,9 +74,8 @@ message CompletionRequest {
   string user_id = 1;
   string conversation_id = 2;
   string message = 3;
-  repeated Attachment attachments = 4;
-  repeated AgentConfig agents = 5;
-  Metadata metadata = 6;
+  repeated AgentConfig agents = 4;
+  Metadata metadata = 5;
 }
 
 // ============ ChunkContent ============

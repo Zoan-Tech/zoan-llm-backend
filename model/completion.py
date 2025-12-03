@@ -8,14 +8,14 @@ class Attachment(BaseModel):
     
 class Metadata(BaseModel):
     console_logs: str = Field("", description="Console logs associated with the request")
+    attachments: Optional[List[Attachment]] = Field(default=None, description="List of attachments associated with the message")
+    web_search: bool = Field(False, description="Flag indicating if web search is enabled for this request")
 
 class CompletionRequest(BaseModel):
     user_id: str = Field(..., description="ID of the user making the request")
     conversation_id: str = Field(..., description="ID of the conversation")
 
     message: str = Field(..., description="Question to ask the model")
-    
-    attachments: Optional[List[Attachment]] = Field(default=None, description="List of attachments associated with the message")
 
     agents: List[AgentConfig] = Field(
         ...,

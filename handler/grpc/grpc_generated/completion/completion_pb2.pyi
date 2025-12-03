@@ -107,26 +107,28 @@ class Attachment(_message.Message):
     def __init__(self, url: _Optional[str] = ..., mime_type: _Optional[str] = ...) -> None: ...
 
 class Metadata(_message.Message):
-    __slots__ = ("console_logs",)
+    __slots__ = ("console_logs", "attachments", "web_search")
     CONSOLE_LOGS_FIELD_NUMBER: _ClassVar[int]
+    ATTACHMENTS_FIELD_NUMBER: _ClassVar[int]
+    WEB_SEARCH_FIELD_NUMBER: _ClassVar[int]
     console_logs: str
-    def __init__(self, console_logs: _Optional[str] = ...) -> None: ...
+    attachments: _containers.RepeatedCompositeFieldContainer[Attachment]
+    web_search: bool
+    def __init__(self, console_logs: _Optional[str] = ..., attachments: _Optional[_Iterable[_Union[Attachment, _Mapping]]] = ..., web_search: bool = ...) -> None: ...
 
 class CompletionRequest(_message.Message):
-    __slots__ = ("user_id", "conversation_id", "message", "attachments", "agents", "metadata")
+    __slots__ = ("user_id", "conversation_id", "message", "agents", "metadata")
     USER_ID_FIELD_NUMBER: _ClassVar[int]
     CONVERSATION_ID_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]
-    ATTACHMENTS_FIELD_NUMBER: _ClassVar[int]
     AGENTS_FIELD_NUMBER: _ClassVar[int]
     METADATA_FIELD_NUMBER: _ClassVar[int]
     user_id: str
     conversation_id: str
     message: str
-    attachments: _containers.RepeatedCompositeFieldContainer[Attachment]
     agents: _containers.RepeatedCompositeFieldContainer[AgentConfig]
     metadata: Metadata
-    def __init__(self, user_id: _Optional[str] = ..., conversation_id: _Optional[str] = ..., message: _Optional[str] = ..., attachments: _Optional[_Iterable[_Union[Attachment, _Mapping]]] = ..., agents: _Optional[_Iterable[_Union[AgentConfig, _Mapping]]] = ..., metadata: _Optional[_Union[Metadata, _Mapping]] = ...) -> None: ...
+    def __init__(self, user_id: _Optional[str] = ..., conversation_id: _Optional[str] = ..., message: _Optional[str] = ..., agents: _Optional[_Iterable[_Union[AgentConfig, _Mapping]]] = ..., metadata: _Optional[_Union[Metadata, _Mapping]] = ...) -> None: ...
 
 class ChunkContent(_message.Message):
     __slots__ = ("type", "value", "agent", "index", "metadata")
