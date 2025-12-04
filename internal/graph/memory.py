@@ -50,10 +50,10 @@ class Memory:
 		except Exception as e:
 			logger.error(f"[Memory] Failed to setup PostgresStore: {str(e)}")
 			# Cleanup saver if store setup fails
-			if hasattr(self, 'saver_cm') and self.saver:
+			if hasattr(self, 'saver_cm') and getattr(self, 'saver', None) is not None:
 				try:
 					self.saver_cm.__exit__(None, None, None)
-				except:
+				except Exception:
 					pass
 			raise
 		
@@ -62,9 +62,9 @@ class Memory:
 	def close(self):
 		"""Close the savers gracefully."""
 		logger.info("[Memory] Closing PostgresSaver and PostgresStore")
-		if hasattr(self, 'saver_cm') and self.saver:
+		if hasattr(self, 'saver_cm') and getattr(self, 'saver', None) is not None:
 			self.saver_cm.__exit__(None, None, None)
-		if hasattr(self, 'store_cm') and self.store:
+		if hasattr(self, 'store_cm') and getattr(self, 'store', None) is not None:
 			self.store_cm.__exit__(None, None, None)
 
 memory = Memory()
