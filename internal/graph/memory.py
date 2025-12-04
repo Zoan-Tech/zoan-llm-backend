@@ -18,20 +18,44 @@ class Memory:
 		"""
 		Setup the memory for the graph builder.
 		Uses PostgresSaver and PostgresStore with built-in connection pooling for thread-safe concurrent access.
+		Automatically runs database migrations/schema setup on initialization.
+		The setup() method is idempotent - safe to call multiple times.
 		"""
 		conn_string = Config.POSTGRES_CONN_STRING
   
-		self.saver_cm = PostgresSaver.from_conn_string(conn_string)
-		self.saver = self.saver_cm.__enter__()
+		try:
+			# Initialize PostgresSaver
+			self.saver_cm = PostgresSaver.from_conn_string(conn_string)
+			self.saver = self.saver_cm.__enter__()
+			# Setup database schema and run migrations (idempotent)
+			self.saver.setup()
+			logger.info("[Memory] PostgresSaver schema setup completed")
+		except Exception as e:
+			logger.error(f"[Memory] Failed to setup PostgresSaver: {str(e)}")
+			raise
   
-		self.store_cm = PostgresStore.from_conn_string(
-			conn_string,
-			index={
-				"dims": 1536,
-				"embed": self.embeddings,
-			}
-		)
-		self.store = self.store_cm.__enter__()
+		try:
+			# Initialize PostgresStore
+			self.store_cm = PostgresStore.from_conn_string(
+				conn_string,
+				index={
+					"dims": 1536,
+					"embed": self.embeddings,
+				}
+			)
+			self.store = self.store_cm.__enter__()
+			# Setup database schema and run migrations (idempotent)
+			self.store.setup()
+			logger.info("[Memory] PostgresStore schema setup completed")
+		except Exception as e:
+			logger.error(f"[Memory] Failed to setup PostgresStore: {str(e)}")
+			# Cleanup saver if store setup fails
+			if hasattr(self, 'saver_cm') and self.saver:
+				try:
+					self.saver_cm.__exit__(None, None, None)
+				except:
+					pass
+			raise
 		
 		logger.info("[Memory] Memory system initialized with thread-safe connection pooling")
 	
