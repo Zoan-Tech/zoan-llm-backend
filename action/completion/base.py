@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Tuple, Optional
 from model import (
     StreamingChunk,
     ChunkType,
-    ChunkContent,
+ChunkContent,
     StreamingStatus,
     ResponseMetadata,
     Attachment,
@@ -19,6 +19,16 @@ from model import (
 )
 from internal.graph.builder.graph import GraphBuilder
 from langfuse.langchain import CallbackHandler
+from services.document_processor import document_processor
+from utils.const.multimodal import (
+    IMAGE_MIME_TYPES,
+    PDF_MIME_TYPES,
+    AUDIO_MIME_TYPES,
+    VIDEO_MIME_TYPES,
+    DOCS_MIME_TYPES,
+)
+
+from langchain.messages import HumanMessage
 
 # Constants and Configuration
 logger = get_logger()
@@ -29,7 +39,109 @@ PRIMARY_AGENT = "supervisor"
 # Processing Configuration
 DEFAULT_RECURSION_LIMIT = 100
 
-
+class CompletionInput:
+    @classmethod
+    def _process_image_attachment(cls, attachment: Attachment) -> Optional[dict[str, Any]]:
+        """Process image attachment and return data URL."""
+        try:
+            image_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
+            
+            return {
+                "type": "image",
+                "base64": image_data,
+                "mime_type": attachment.mime_type,
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch or encode image from {attachment.url}: {str(e)}")
+            return None
+        
+    @classmethod
+    def _process_pdf_attachment(cls, attachment: Attachment) -> Optional[dict[str, Any]]:
+        """Process PDF attachment and return URL."""
+        try:
+            pdf_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
+            return {
+                "type": "file",
+                "base64": pdf_data,
+                "mime_type": attachment.mime_type,
+            }
+        except Exception as e:
+            logger.error(f"Failed to process PDF from {attachment.url}: {str(e)}")
+            return None
+        
+    @classmethod
+    def _process_audio_attachment(cls, attachment: Attachment) -> Optional[dict[str, Any]]:
+        """Process audio attachment and return URL.""" 
+        try:
+            audio_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
+            return {
+                "type": "audio",
+                "base64": audio_data,
+                "mime_type": attachment.mime_type,
+            }
+        except Exception as e:
+            logger.error(f"Failed to process audio from {attachment.url}: {str(e)}")
+            return None
+        
+    @classmethod
+    def _process_video_attachment(cls, attachment: Attachment) -> Optional[dict[str, Any]]:
+        """Process video attachment and return URL."""
+        try:
+            video_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
+            return {
+                "type": "video",
+                "base64": video_data,
+                "mime_type": attachment.mime_type,
+            }
+        except Exception as e:
+            logger.error(f"Failed to process video from {attachment.url}: {str(e)}")
+            return None
+    
+    @classmethod
+    def _process_doc_attachment(
+        cls, 
+        attachment: Attachment, 
+        user_id: str = "", 
+        conversation_id: str = ""
+    ) -> Optional[dict[str, Any]]:
+        """
+        Process document attachment by storing it in Qdrant for later retrieval.
+        
+        Args:
+            attachment: The document attachment to process
+            user_id: User ID for storing the document
+            conversation_id: Conversation ID for storing the document
+            
+        Returns:
+            Dictionary with processing status, or None if failed
+        """
+        try:
+            if not user_id or not conversation_id:
+                logger.warning("Cannot process document: missing user_id or conversation_id")
+                return None
+            
+            # Process and store document asynchronously in background
+            success = document_processor.process_and_store_document(
+                attachment_url=attachment.url,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                mime_type=attachment.mime_type,
+            )
+            
+            if success:
+                logger.info(f"Document {attachment.url} processed and stored successfully")
+                return {
+                    "type": "document",
+                    "status": "stored",
+                    "url": attachment.url,
+                }
+            else:
+                raise ValueError(f"Failed to process document {attachment.url}")
+                
+        except Exception as e:
+            logger.error(f"Error processing document attachment: {str(e)}")
+            return None   
+        
 class BaseCompletionAction:
     """
     Base class for completion actions using LangGraph.
@@ -178,6 +290,15 @@ class BaseCompletionAction:
             status=chunk.response_metadata.get("status", "")
         )
         
+        if len(content_list) == 0:
+            content_list.append(ChunkContent(
+                type=ChunkType.TEXT,
+                value="",
+                agent=agent_name,
+                index=0,
+                metadata={}
+            ))
+        
         return StreamingChunk(
             content=content_list,
             response_metadata=response_metadata
@@ -187,48 +308,100 @@ class BaseCompletionAction:
         """Process chunk content and extract annotations."""
         return self._convert_chunk_content(chunk, agent_name)
     
-    def _graph_image_input(self, attachments: List[Attachment]) -> List[Dict[str, Any]]:
+    def _graph_multimodal_input(
+        self, 
+        attachments: List[Attachment],
+        user_id: str = "",
+        conversation_id: str = ""
+    ) -> List[HumanMessage]:
         """Create input configuration for the graph with image attachments."""
-        # TODO: Add caching for images to avoid repeated downloads
-        attachment_input = []
+        mutimodal_input = []
         for attachment in attachments:
-            try:
-                image_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
-                
-                attachment_input.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{attachment.mime_type};base64,{image_data}",
-                    }
-                })
-            except Exception as e:
-                logger.error(f"Failed to fetch or encode image from {attachment.url}: {str(e)}")
-                continue
-            
-        return attachment_input
-
-    def _create_graph_input(self, message: str, attachments: Optional[List[Attachment]] = None, metadata: Metadata = Metadata()) -> Dict[str, Any]:
-        """Create input configuration for the graph."""
-        graph_input = { 
-            "messages": [
-                ("user", "[{datetime}] - {message}".format(datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message=message))
+            content_blocks = [
+                {
+                    "type": "text",
+                    "text": "Attachment: {}".format(attachment.url)
+                }
             ]
-        }
+            if attachment.mime_type in IMAGE_MIME_TYPES:
+                image_input = CompletionInput._process_image_attachment(attachment)
+                if image_input:
+                    content_blocks.append(image_input)
+            elif attachment.mime_type in PDF_MIME_TYPES:
+                pdf_input = CompletionInput._process_pdf_attachment(attachment)
+                if pdf_input:
+                    content_blocks.append(pdf_input)
+            elif attachment.mime_type in AUDIO_MIME_TYPES:
+                audio_input = CompletionInput._process_audio_attachment(attachment)
+                if audio_input:
+                    content_blocks.append(audio_input)
+            elif attachment.mime_type in VIDEO_MIME_TYPES:
+                video_input = CompletionInput._process_video_attachment(attachment)
+                if video_input:
+                    content_blocks.append(video_input)
+            elif attachment.mime_type in DOCS_MIME_TYPES:
+                # Process and store document in Qdrant (doesn't add to multimodal input)
+                CompletionInput._process_doc_attachment(
+                    attachment,
+                    user_id=user_id,
+                    conversation_id=conversation_id
+                )
+            mutimodal_input.append(
+                HumanMessage(
+                    content_blocks=content_blocks
+                )
+            )
+            
+        return mutimodal_input
+
+    def _create_graph_input(
+        self, 
+        message: str, 
+        attachments: Optional[List[Attachment]] = None, 
+        metadata: Metadata = Metadata(),
+        user_id: str = "",
+        conversation_id: str = ""
+    ) -> Dict[str, Any]:
+        """Create input configuration for the graph."""
+        # User message
+        messages = [
+            HumanMessage(
+                content_blocks=[
+                    {
+                        "type": "text",
+                        "text": "[{datetime}] - {message}".format(datetime=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message=message)
+                    }
+                ]
+            )
+        ]
         
         # Include attachments if available
         if attachments and len(attachments) > 0:
-            attachment_input = self._graph_image_input(attachments)
+            mutimodal_input = self._graph_multimodal_input(
+                attachments,
+                user_id=user_id,
+                conversation_id=conversation_id
+            )
             
-            if len(attachment_input) > 0:
-                graph_input["messages"].append(
-                    ("user", attachment_input)
-                )
+            if len(mutimodal_input) > 0:
+                messages.extend(mutimodal_input)
         
         # Include console logs if available
         if metadata.console_logs != "":
-            graph_input["messages"].append(
-                ("user", f"Current console logs:\n{metadata.console_logs}")
+            messages.append(
+                HumanMessage(
+                    content_blocks=[
+                        {
+                            "type": "text",
+                            "text": "Console Logs:\n{}".format(metadata.console_logs)
+                        }
+                    ]
+                )
             )
+            
+        graph_input = {
+            "messages": messages
+        }
         
         return graph_input
 

@@ -52,7 +52,6 @@ class GrpcCompletionAction(BaseCompletionAction):
         ):      
             agent_name = self._extract_agent_name(agent)
             streaming_chunk = self._process_chunk(agent_name, chunk[0])
-                
             yield streaming_chunk
 
     async def create_completion_stream(
@@ -104,7 +103,13 @@ class GrpcCompletionAction(BaseCompletionAction):
             # Initialize graph components
             compiled_graph = self.graph_builder.get_compiled_graph(agents, web_search=web_search)
             
-            input_data = self._create_graph_input(message, attachments, metadata)
+            input_data = self._create_graph_input(
+                message, 
+                attachments, 
+                metadata,
+                user_id=user_id,
+                conversation_id=conversation_id
+            )
             config = self._create_graph_config(user_id, conversation_id, auth_token)
             
             # Main streaming flow
