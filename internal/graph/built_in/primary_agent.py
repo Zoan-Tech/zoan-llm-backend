@@ -4,6 +4,7 @@ from internal.graph.built_in.base import BaseInternalAgent
 from internal.graph.built_in.tools.base import ProviderBuiltInTool, BuiltinToolName
 from internal.graph.built_in.tools.primary_agent import (
     zoan_internal_update_chat_title,
+    zoan_internal_search_uploaded_documents,
 )
 from model import AgentConfig
 from internal.graph.built_in.middleware.base import get_base_middleware
@@ -15,15 +16,14 @@ class PrimaryAgent(BaseInternalAgent):
     def get_toolset(self, model: str, custom_handoff_tools: list = [], web_search: bool = False) -> list:
         internal_tools = [
             zoan_internal_update_chat_title,
+            zoan_internal_search_uploaded_documents,
         ]
         
         if web_search:
             if "openai" in model:
-                internal_tools.extend([ProviderBuiltInTool.OPENAI[BuiltinToolName.WEB_SEARCH]])
+                internal_tools.append(ProviderBuiltInTool.OPENAI[BuiltinToolName.WEB_SEARCH])
             elif "anthropic" in model:
-                internal_tools.extend([ProviderBuiltInTool.ANTHROPIC[BuiltinToolName.WEB_SEARCH]])
-            else:
-                return []
+                internal_tools.append(ProviderBuiltInTool.ANTHROPIC[BuiltinToolName.WEB_SEARCH])
             
         return internal_tools + custom_handoff_tools
     
@@ -39,7 +39,7 @@ class PrimaryAgent(BaseInternalAgent):
             web_search=kwargs.get("web_search", False)
         )
         
-        system_prompt = self.get_prompt()
+        system_prompt = self.get_prompt(current_avail_agents=kwargs.get("current_avail_agents", ""))
         
         middleware = self.get_middleware()
 

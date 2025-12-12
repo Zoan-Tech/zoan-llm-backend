@@ -1,6 +1,6 @@
 import base64
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain.messages import HumanMessage, SystemMessage
 import mimetypes
 
 from utils.model import Model
@@ -32,10 +32,14 @@ class MediaInfoGenerator:
             )
             message = HumanMessage(
                 content=[
-                    {"type": "text", "text": "Describe the content of the media - {} in detail.".format(image_name)},
                     {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mimetype};base64,{image_data}"},
+                        "type": "text", 
+                        "text": "Describe the content of the media - {} in detail.".format(image_name)
+                    },
+                    {
+                        "type": "image",
+                        "base64": image_data,
+                        "mime_type": mimetype,
                     },
                 ]
             )

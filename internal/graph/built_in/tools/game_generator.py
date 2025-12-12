@@ -5,11 +5,11 @@ import mimetypes
 import shutil
 import tarfile
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import requests
 from langchain.tools import InjectedToolCallId
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain.messages import HumanMessage, ToolMessage
 from langchain_core.runnables.config import ensure_config
 from langchain_core.tools import tool
 from langgraph.types import Command
@@ -18,9 +18,10 @@ from config import Config
 from config.logging import get_logger
 from internal.graph.built_in.helper.minio_games import minio_games_helper
 from internal.vectorizer.base import TEXT_EMBEDDING_MODEL
-from model.client.app_preview import BuildRequest, BuildStatus
+from model.client.app_preview import BuildStatus
 from services.connector.app_preview import app_preview_client
 from services.qdrant_library_client import qm, qdrant_library_client
+from utils.const.multimodal import PAGINATION_OFFSET_MULTIPLIER
 
 logger = get_logger()
 
@@ -40,10 +41,15 @@ def get_thread_data_path(thread_id: str) -> Path:
 @tool
 def search_knowledge_hub(
     query: Annotated[str, "The search query, related to game specifications, features, or themes"],
+    filter: Annotated[Optional[dict], "Optional filter to narrow down search results, in JSON format, for example: {'object_key': 'flappy bird'}"],
     offset: Annotated[int, "The offset for pagination, starting from 0, corresponds to the number of times the search has been performed."],
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
     """Search the library for relevant game specification/game feature or game themes/assets.
+    
+    Filter has keys that can be used to narrow down search:
+    - object_key: Filter by object key (file name or path), this supports partial matching. Some assets will be stored under a specific folder structure, if a folder related available, you can query the whole folder path.
+    - mimetype: Filter by MIME type (e.g., image/png, text/javascript), this supports exact matching
     
     Returns search results with text content and image URLs that will be automatically 
     injected into the conversation for visual analysis.
@@ -68,15 +74,38 @@ def search_knowledge_hub(
         ]
     )
     
+    should_ = []
+    
+    if filter:
+        for key, value in filter.items():
+            if key == 'object_key':
+                should_.append(
+                    qm.FieldCondition(
+                        key=key,
+                        match=qm.MatchTextAny(text_any=value)
+                    )
+                )
+            elif key == 'mimetype':
+                should_.append(
+                    qm.FieldCondition(
+                        key=key,
+                        match=qm.MatchText(text=value)
+                    )
+                )
+                
+    if len(should_) > 0:
+        filter_.should = should_
+    
     text_vector = TEXT_EMBEDDING_MODEL.embed_query(query)
         
-    results = qdrant_library_client.client.search(
+    results = qdrant_library_client.client.query_points(
         collection_name=qdrant_library_client.collection_name,
-        query_vector=("text", text_vector),
+        query=text_vector,
+        using="text",
         query_filter=filter_,
         limit=5,
-        offset=offset * 10,
-    )
+        offset=offset * PAGINATION_OFFSET_MULTIPLIER,
+    ).points
     
     # Collect image URLs from results
     human_messages = []
@@ -96,18 +125,18 @@ def search_knowledge_hub(
             
             encoded_image = base64.b64encode(response.content).decode("utf-8")  # Fixed variable name
             description = result.payload.get("description", "No description available.")
+            # TODO: Handle other content types (e.g., text, audio) if needed
             human_messages.append(HumanMessage(
                 content=[
                     {
                         "type": "text",
-                        "text": f"Image: {url}. {description}"
+                        "text": f"Image found in `search_knowledge_hub`: {url}. {description}"
                     },
                     {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{encoded_image}"
-                        }
-                    }
+                        "type": "image",
+                        "base64": encoded_image,
+                        "mime_type": mime_type
+                    },
                 ]
             ))
         except Exception as e:
@@ -263,11 +292,10 @@ def read_file(
                     HumanMessage(
                         content=[
                             {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{mimetype};base64,{encoded_image}"
-                                }
-                            }
+                                "type": "image",
+                                "base64": encoded_image,
+                                "mime_type": mimetype
+                            },
                         ]
                     )
                 ]

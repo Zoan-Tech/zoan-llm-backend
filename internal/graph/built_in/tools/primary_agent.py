@@ -8,6 +8,7 @@ from langchain_core.runnables.config import ensure_config
 from langgraph.types import Command
 
 from action.webhook_client.chat_title import chat_title as chat_title_webhook_client
+from services.document_processor import document_processor
 from config.logging import get_logger
 
 logger = get_logger()
@@ -64,6 +65,58 @@ def zoan_internal_update_chat_title(
     except Exception as e:
         logger.error(f"[update_chat_title] Error in tool execution: {str(e)}", exc_info=True)
         return f"❌ Error updating title: {str(e)}"
+
+
+@tool
+def zoan_internal_search_uploaded_documents(
+    query: Annotated[str, "The search query to find relevant content from uploaded documents"],
+    limit: Annotated[int, "Maximum number of document chunks to retrieve (default: 5)"] = 5,
+) -> str:
+    """
+    Search through uploaded documents to find relevant content based on the query.
+    
+    Use this tool when:
+    1. The user asks questions about their uploaded documents
+    2. You need context from previously uploaded files
+    3. The user references information that might be in their documents
+    
+    The tool will return the most relevant excerpts from the documents based on semantic similarity.
+    
+    Args:
+        query: What you're looking for in the documents
+        limit: How many relevant chunks to retrieve (default: 5)
+    
+    Returns:
+        Formatted string with relevant document excerpts, or empty if no documents found.
+    """
+    try:
+        config = ensure_config()
+        configurable = config.get("configurable", {})
+        
+        user_id = configurable.get("user_id", "")
+        conversation_id = configurable.get("thread_id", "")
+        
+        if not user_id or not conversation_id:
+            logger.warning("[search_uploaded_documents] Missing user_id or conversation_id")
+            return "Cannot search documents: Missing user or conversation information"
+        
+        # Search for relevant content
+        result = document_processor.search_relevant_content(
+            query=query,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            limit=limit,
+            score_threshold=0.7,
+        )
+        
+        if not result:
+            return "No relevant content found in uploaded documents. The user may not have uploaded any documents yet, or the documents don't contain information relevant to this query."
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"[search_uploaded_documents] Error in tool execution: {str(e)}", exc_info=True)
+        return f"Error searching documents: {str(e)}"
 
 
 def create_handoff_tool(

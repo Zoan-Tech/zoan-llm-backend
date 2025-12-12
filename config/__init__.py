@@ -26,6 +26,7 @@ class Defaults:
     
     QDRANT_URL = "http://localhost:6333"
     QDRANT_LIBRARY_COLLECTION_NAME = "library"
+    QDRANT_MESSAGES_COLLECTION_NAME = "messages"
     
     WEBHOOK_URL = "http://localhost:3000"
 
@@ -65,6 +66,7 @@ class Config:
     QDRANT_URL: str = os.environ.get(SecretEnum.QDRANT_URL.value, Defaults.QDRANT_URL)
     QDRANT_API_KEY: Optional[str] = os.environ.get(SecretEnum.QDRANT_API_KEY.value)
     QDRANT_LIBRARY_COLLECTION_NAME: str = os.environ.get(SecretEnum.QDRANT_LIBRARY_COLLECTION_NAME.value, Defaults.QDRANT_LIBRARY_COLLECTION_NAME)
+    QDRANT_MESSAGES_COLLECTION_NAME: str = os.environ.get(SecretEnum.QDRANT_MESSAGES_COLLECTION_NAME.value, Defaults.QDRANT_MESSAGES_COLLECTION_NAME)
     
     WEBHOOK_URL: str = os.environ.get(SecretEnum.WEBHOOK_URL.value, Defaults.WEBHOOK_URL)
     

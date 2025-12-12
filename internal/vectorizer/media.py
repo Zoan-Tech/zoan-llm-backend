@@ -1,5 +1,4 @@
 from internal.vectorizer.base import *
-import uuid
 from PIL import Image
 from typing import Optional, List, Any
 import numpy as np
@@ -11,16 +10,14 @@ from model.minio_bucket import MediaObject
 
 from config.logging import get_logger
 from utils.enums import *
+from utils.const.multimodal import (
+    IMAGE_MIME_TYPES,
+)
 
 logger = get_logger()
 
 class MediaProcessor(BaseProcessor):
     """Processor for media files (images and videos)."""
-    
-    IMAGE_MIME_TYPES: List[str] = ["image/jpeg", "image/png", "image/gif", "image/bmp", "image/webp"]
-    VIDEO_MIME_TYPES: List[str] = []  # Ready for future video processing
-    
-    ALLOWED_MIME_TYPES: List[str] = IMAGE_MIME_TYPES + VIDEO_MIME_TYPES
     
     @classmethod
     def _load_image(cls, bucket: str, object_key: str) -> Optional[MediaObject]:
@@ -56,10 +53,8 @@ class MediaProcessor(BaseProcessor):
     @classmethod
     def _load_media(cls, bucket: str, object_key: str, mimetype: str) -> Optional[MediaObject]:
         """Load media based on mimetype."""
-        if mimetype in cls.IMAGE_MIME_TYPES:
+        if mimetype in IMAGE_MIME_TYPES:
             return cls._load_image(bucket, object_key)
-        elif mimetype in cls.VIDEO_MIME_TYPES:
-            return cls._load_video(bucket, object_key)
         else:
             logger.warning(f"Unsupported media type: {mimetype}")
             return None
@@ -68,7 +63,7 @@ class MediaProcessor(BaseProcessor):
     @classmethod
     def _construct_vector(cls, media: MediaObject, mimetype: str) -> List[dict[str, Any]]:
         """Construct vector embeddings for media objects."""
-        if mimetype in cls.IMAGE_MIME_TYPES:
+        if mimetype in IMAGE_MIME_TYPES:
             try:
                 # Generate image embedding
                 image: np.ndarray = IMAGE_EMBEDDING_MODEL.encode([media.media], batch_size=1, convert_to_numpy=True, normalize_embeddings=True)[0]
@@ -81,6 +76,5 @@ class MediaProcessor(BaseProcessor):
             except Exception as e:
                 logger.error(f"Failed to construct vector for {mimetype}: {e}")
                 raise
-        elif mimetype in cls.VIDEO_MIME_TYPES:
-            ## Future video embedding construction can be added here
-            return []
+            
+        return []

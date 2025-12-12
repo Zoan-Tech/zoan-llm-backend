@@ -1,10 +1,7 @@
-from typing import Optional
 from langchain.agents import create_agent
 
-from config import Config
 from config.logging import get_logger
 from internal.graph.built_in.base import BaseInternalAgent
-from internal.graph.built_in.tools.base import ProviderBuiltInTool, BuiltinToolName
 
 from internal.graph.built_in.tools.game_generator import (
     search_knowledge_hub,
@@ -32,17 +29,8 @@ class GameGeneratorV1(BaseInternalAgent):
     SANITIZED_NAME = "game_generator"
     PROMPT_NAME = "game_generator_v1"
     
-    def _get_provider_built_in_tool(self, model: str = None):
-        if "openai" in model:
-            return [ProviderBuiltInTool.OPENAI.values()]
-        elif "anthropic" in model:
-            return [ProviderBuiltInTool.ANTHROPIC.values()]
-        else:
-            return []
-    
     def get_toolset(self, model: str):
         """Get the tools available for game generation"""
-        built_in_tools = self._get_provider_built_in_tool(model)
         
         base_tools = [
             search_knowledge_hub,
@@ -55,7 +43,6 @@ class GameGeneratorV1(BaseInternalAgent):
             clean_up,
         ]
         
-        base_tools.extend(built_in_tools)
         return base_tools
     
     def get_middleware(self) -> list:
@@ -69,7 +56,7 @@ class GameGeneratorV1(BaseInternalAgent):
         
         toolset = self.get_toolset(agent_config.model)
         
-        system_prompt = self.get_prompt()
+        system_prompt = self.get_prompt() 
         middleware = self.get_middleware()
         
         return create_agent(

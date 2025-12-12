@@ -5,6 +5,7 @@ from langchain_core.runnables.config import ensure_config
 from config import Config
 from services.qdrant_library_client import qm, qdrant_library_client
 from internal.vectorizer.base import TEXT_EMBEDDING_MODEL
+from utils.const.multimodal import PAGINATION_OFFSET_MULTIPLIER
 
 @tool
 def search_library(
@@ -34,13 +35,14 @@ def search_library(
     
     text_vector = TEXT_EMBEDDING_MODEL.embed_query(query)
         
-    results = qdrant_library_client.client.search(
+    results = qdrant_library_client.client.query_points(
         collection_name=qdrant_library_client.collection_name,
-        query_vector=("text", text_vector),
+        query=text_vector,
+        using="text",
         query_filter=filter_,
         limit=5,
-        offset=offset * 10,
-    )
+        offset=offset * PAGINATION_OFFSET_MULTIPLIER,
+    ).points
     
     search_result = f"Found {len(results)} results for query '{query}' with offset {offset}."
     search_item = "\n".join([
