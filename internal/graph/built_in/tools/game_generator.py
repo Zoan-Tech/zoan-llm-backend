@@ -109,11 +109,13 @@ def search_knowledge_hub(
     
     # Collect image URLs from results
     human_messages = []
+    text_results = ""
     
     for idx, result in enumerate(results):
         try:
             bucket = result.payload.get("bucket")
             object_key = result.payload.get("object_key")
+            text_results += f"{idx+1}. Object key: {object_key}\n"
             
             url = f"{Config.MINIO_BROWSER_URL}/{bucket}/{object_key}"
             mime_type = result.payload.get("mimetype")
@@ -145,7 +147,7 @@ def search_knowledge_hub(
         
     messages = [
         ToolMessage(
-            content=f"Found {len(human_messages)} results for query: '{query}'",
+            content=f"Found {len(human_messages)} results for query: '{query}'\n{text_results}",
             tool_call_id=tool_call_id
         )
     ] + human_messages
@@ -276,7 +278,14 @@ def read_file(
     file_path = data_path / file
     
     if not file_path.exists():
-        return f"✗ Error: File does not exist: data/{thread_id}/{file}"
+        return Command(update={
+            "messages": [
+                ToolMessage(
+                    content=f"✗ Error: File does not exist: data/{thread_id}/{file}",
+                    tool_call_id=tool_call_id
+                ),
+            ]
+        })
     
     mimetype, _ = mimetypes.guess_type(file_path.as_posix())
     try:
@@ -314,7 +323,14 @@ def read_file(
             })
     except Exception as e:
         logger.error(f"Error reading file: {e}")
-        return f"✗ Error: {str(e)}"
+        return Command(update={
+            "messages": [
+                ToolMessage(
+                    content=f"✗ Error: {str(e)}",
+                    tool_call_id=tool_call_id
+                ),
+            ]
+        })
 
 @tool
 def str_replace_editor(

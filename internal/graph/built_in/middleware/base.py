@@ -2,7 +2,7 @@ from langchain.agents.middleware import SummarizationMiddleware
 from utils.model import Model
 
 def get_base_middleware(
-    max_tokens_before_summary=10000,
+    max_tokens_before_summary=20000,
     messages_to_keep=10,
 ) -> list:
     base_middleware = [

@@ -16,6 +16,7 @@ from internal.graph.built_in.tools.game_generator import (
 from model import AgentConfig
 from internal.graph.built_in.middleware.base import get_base_middleware
 from internal.graph.builder.agent import AgentBuilder
+from langchain.agents.middleware import TodoListMiddleware
 
 logger = get_logger()
 
@@ -43,20 +44,24 @@ class GameGeneratorV1(BaseInternalAgent):
             clean_up,
         ]
         
-        return base_tools
+        return base_tools + self.handoff_tools
     
     def get_middleware(self) -> list:
         base_middleware = get_base_middleware()
+        middlewares = [
+            TodoListMiddleware(),
+        ]
         
-        return base_middleware
+        return middlewares
     
     def get_agent(self, agent_config: AgentConfig, **kwargs):
         """Create the agent with the LLM and tools"""
+        self._prepare_handoff_tools(agent_config.is_primary)
         llm = AgentBuilder._construct_llm_model(agent_config)
         
         toolset = self.get_toolset(agent_config.model)
         
-        system_prompt = self.get_prompt() 
+        system_prompt = self.get_prompt()
         middleware = self.get_middleware()
         
         return create_agent(
