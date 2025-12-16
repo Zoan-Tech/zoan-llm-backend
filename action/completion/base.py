@@ -228,6 +228,9 @@ class BaseCompletionAction:
                             "game_version": game_version
                         }
                     ))
+            if chunk.name == 'write_todos':
+                # TODO: format proper middleware output
+                pass  # Ignore write_todos tool output
                 
         return chunks
 
@@ -261,20 +264,6 @@ class BaseCompletionAction:
                         ))
             return content_list
         return []
-
-    def _extract_message_content(self, chunk, agent_name: str) -> List[ChunkContent]:
-        """Extract message content from chunk."""
-        content_list = []
-        for message in chunk.content:
-            if isinstance(message, dict) and message.get("type") == "text":
-                content_list.append(ChunkContent(
-                    type=ChunkType.TEXT,
-                    value=message.get("text", ""),
-                    agent=agent_name,
-                    index=0,
-                    metadata={}
-                ))
-        return content_list
 
     def _convert_chunk_content(self, chunk, agent_name: str) -> StreamingChunk:
         """Convert chunk content to the StreamingChunk model."""

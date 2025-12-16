@@ -13,7 +13,7 @@ class PrimaryAgent(BaseInternalAgent):
     SANITIZED_NAME = "supervisor"
     PROMPT_NAME = "primary_agent_v1"
     
-    def get_toolset(self, model: str, custom_handoff_tools: list = [], web_search: bool = False) -> list:
+    def get_toolset(self, model: str, web_search: bool = False) -> list:
         internal_tools = [
             zoan_internal_update_chat_title,
             zoan_internal_search_uploaded_documents,
@@ -25,23 +25,23 @@ class PrimaryAgent(BaseInternalAgent):
             elif "anthropic" in model:
                 internal_tools.append(ProviderBuiltInTool.ANTHROPIC[BuiltinToolName.WEB_SEARCH])
             
-        return internal_tools + custom_handoff_tools
+        return internal_tools + self.handoff_tools
     
     def get_middleware(self) -> list:
         base_middleware = get_base_middleware()
         return base_middleware
     
     def get_agent(self, agent_config: AgentConfig, **kwargs):
+        self._prepare_handoff_tools(agent_config.is_primary, agent_names=kwargs.get("agent_names", []))
         llm = self._construct_llm_model(agent_config)
         toolset = self.get_toolset(
             agent_config.model,
-            custom_handoff_tools=kwargs.get("custom_handoff_tools", []),
             web_search=kwargs.get("web_search", False)
         )
-        
+            
         system_prompt = self.get_prompt(current_avail_agents=kwargs.get("current_avail_agents", ""))
         
-        middleware = self.get_middleware()
+        middleware = ()
 
         return create_agent(
             model=llm,
