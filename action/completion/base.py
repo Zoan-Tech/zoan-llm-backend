@@ -237,7 +237,6 @@ class BaseCompletionAction:
                 index=0,
                 metadata={}
             ))
-            
             if chunk.name == "build_source" and chunk.status == 'success':
                 # Special handling for build_source tool to include game URL
                 build_response = json.loads(chunk.content)
