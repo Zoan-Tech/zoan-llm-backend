@@ -216,7 +216,7 @@ class BaseCompletionAction:
                             index=0,
                             metadata={"tool": "write_todos"}
                         ))
-                    return chunks
+                        return chunks
                 except (json.JSONDecodeError, AttributeError, KeyError) as e:
                     # If parsing fails, fall through to default formatting
                     logger.warning(f"Failed to parse write_todos output: {str(e)}")
