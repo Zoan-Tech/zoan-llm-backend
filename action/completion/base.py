@@ -195,6 +195,33 @@ class BaseCompletionAction:
             if chunk.name.startswith("zoan_internal") or chunk.name.startswith("transfer_back_"):
                 return chunks
             
+            # Special handling for write_todos middleware output
+            if chunk.name == 'write_todos':
+                try:
+                    todo_data = json.loads(chunk.content)
+                    todos = todo_data.get("todos", [])
+                    
+                    if todos:
+                        # Format todo list in a user-friendly way
+                        todo_list_text = "📋 **Todo List Updated:**\n\n"
+                        for todo in todos:
+                            status_icon = "✅" if todo.get("status") == "completed" else "⬜"
+                            task = todo.get("task", "")
+                            todo_list_text += f"{status_icon} {task}\n"
+                        
+                        chunks.append(ChunkContent(
+                            type=ChunkType.TEXT,
+                            value=todo_list_text,
+                            agent=agent_name,
+                            index=0,
+                            metadata={"tool": "write_todos"}
+                        ))
+                    return chunks
+                except (json.JSONDecodeError, AttributeError, KeyError) as e:
+                    # If parsing fails, fall through to default formatting
+                    logger.warning(f"Failed to parse write_todos output: {str(e)}")
+            
+            # Default tool output formatting
             tool_output = (
 """
 ```python
@@ -210,6 +237,7 @@ class BaseCompletionAction:
                 index=0,
                 metadata={}
             ))
+            
             if chunk.name == "build_source" and chunk.status == 'success':
                 # Special handling for build_source tool to include game URL
                 build_response = json.loads(chunk.content)
@@ -228,9 +256,6 @@ class BaseCompletionAction:
                             "game_version": game_version
                         }
                     ))
-            if chunk.name == 'write_todos':
-                # TODO: format proper middleware output
-                pass  # Ignore write_todos tool output
                 
         return chunks
 
