@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Zoan LLM Backend Service"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "confluent-kafka==2.12.2",
     "docling==2.64.1",
     "dotenv==0.9.9",
     "fastapi==0.124.4",
@@ -23,8 +22,10 @@ dependencies = [
     "langgraph-swarm==0.1.0",
     "minio==7.2.20",
     "psycopg-binary==3.3.2",
+    "psycopg2-binary==2.9.10",
     "qdrant-client==1.16.2",
     "sentence-transformers==5.2.0",
+    "sqlalchemy==2.0.36",
     "uvicorn==0.38.0",
 ]
 

@@ -89,7 +89,10 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     "attachments": [
                         {
                             "url": att.url,
-                            "mime_type": att.mime_type
+                            "file_name": att.file_name,
+                            "mime_type": att.mime_type,
+                            "file_size": att.file_size,
+                            "type": att.type
                         } for att in request.metadata.attachments
                     ] if request.metadata.attachments else [],
                     "web_search": request.metadata.web_search

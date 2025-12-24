@@ -99,12 +99,18 @@ class AgentConfig(_message.Message):
     def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., model: _Optional[str] = ..., model_kwargs: _Optional[_Union[ModelKwargs, _Mapping]] = ..., description: _Optional[str] = ..., instruction: _Optional[str] = ..., system_prompt: _Optional[str] = ..., is_enabled: bool = ..., is_primary: bool = ..., workflows: _Optional[_Iterable[_Union[AgentWorkflow, _Mapping]]] = ..., stream_usage: bool = ...) -> None: ...
 
 class Attachment(_message.Message):
-    __slots__ = ("url", "mime_type")
+    __slots__ = ("url", "mime_type", "file_name", "file_size", "type")
     URL_FIELD_NUMBER: _ClassVar[int]
     MIME_TYPE_FIELD_NUMBER: _ClassVar[int]
+    FILE_NAME_FIELD_NUMBER: _ClassVar[int]
+    FILE_SIZE_FIELD_NUMBER: _ClassVar[int]
+    TYPE_FIELD_NUMBER: _ClassVar[int]
     url: str
     mime_type: str
-    def __init__(self, url: _Optional[str] = ..., mime_type: _Optional[str] = ...) -> None: ...
+    file_name: str
+    file_size: str
+    type: str
+    def __init__(self, url: _Optional[str] = ..., mime_type: _Optional[str] = ..., file_name: _Optional[str] = ..., file_size: _Optional[str] = ..., type: _Optional[str] = ...) -> None: ...
 
 class Metadata(_message.Message):
     __slots__ = ("console_logs", "attachments", "web_search")
