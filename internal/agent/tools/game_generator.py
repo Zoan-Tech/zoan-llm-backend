@@ -11,7 +11,7 @@ import requests
 from langchain.messages import HumanMessage, ToolMessage
 from langchain.tools import InjectedToolCallId
 from langchain_core.runnables.config import ensure_config
-from langchain_core.tools import tool
+from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 from qdrant_client.http import models as qm
 
@@ -45,7 +45,7 @@ def search_knowledge_hub(
     query: Annotated[str, "The search query, related to game specifications, features, or themes"],
     filter: Annotated[Optional[dict], "Optional filter to narrow down search results, in JSON format, for example: {'object_key': 'flappy bird'}"],
     offset: Annotated[int, "The offset for pagination, starting from 0, corresponds to the number of times the search has been performed."],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     """Search the library for relevant game specification/game feature or game themes/assets.
     
@@ -150,7 +150,6 @@ def search_knowledge_hub(
     messages = [
         ToolMessage(
             content=f"Found {len(human_messages)} results for query: '{query}'\n{text_results}",
-            tool_call_id=tool_call_id
         )
     ] + human_messages
     
@@ -262,7 +261,7 @@ def init_or_load_game_source() -> str:
 @tool
 def read_file(
     file: Annotated[str, "Path to the file to read (relative to data/thread_id/)"],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     """
     Read the content of a specified file/image within the thread's data directory.
@@ -284,7 +283,6 @@ def read_file(
             "messages": [
                 ToolMessage(
                     content=f"✗ Error: File does not exist: data/{thread_id}/{file}",
-                    tool_call_id=tool_call_id
                 ),
             ]
         })
@@ -298,7 +296,6 @@ def read_file(
                 "messages": [
                     ToolMessage(
                         content=f"Reading image file: data/{thread_id}/{file}",
-                        tool_call_id=tool_call_id
                     ),
                     HumanMessage(
                         content=[
@@ -319,7 +316,6 @@ def read_file(
                 "messages": [
                     ToolMessage(
                         content=content,
-                        tool_call_id=tool_call_id
                     ),
                 ]
             })
@@ -329,7 +325,6 @@ def read_file(
             "messages": [
                 ToolMessage(
                     content=f"✗ Error: {str(e)}",
-                    tool_call_id=tool_call_id
                 ),
             ]
         })

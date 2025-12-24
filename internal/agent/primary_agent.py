@@ -43,8 +43,6 @@ class PrimaryAgent(BaseInternalAgent):
         )
             
         system_prompt = self.get_prompt(current_avail_agents=kwargs.get("current_avail_agents", ""))
-        with open("prompt_draft/primary_agent_prompt_draft.md", "r") as f:
-            system_prompt = f.read()
         
         middleware = ()
 

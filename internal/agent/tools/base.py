@@ -12,7 +12,7 @@ from qdrant_client.http import models as qm
 from langchain.tools import InjectedToolCallId
 from langchain.messages import HumanMessage, ToolMessage
 from langchain_core.runnables.config import ensure_config
-from langchain_core.tools import tool
+from langchain.tools import tool, ToolRuntime
 from langgraph.types import Command
 
 from config import Config
@@ -159,10 +159,10 @@ def _format_search_results(results: list, source: str) -> list[str]:
 def search_knowledge_base(
     query: Annotated[str, "The search query to find relevant content"],
     source: Annotated[Literal["library", "messages"], "Search from which collection: 'library' for public assets and user-owned game specs, themes, features; 'documents' for user's uploaded documents in current conversation"],
-    filter: Annotated[Optional[dict], "Optional filter in JSON format. For library: {'object_key': 'path', 'mimetype': 'image/png'}. For documents: {'attachment_url': 'file.pdf'}"] = None,
-    limit: Annotated[int, "Maximum number of results to retrieve (default: 5)"] = 5,
-    offset: Annotated[int, "The offset for pagination, starting from 0"] = 0,
-    tool_call_id: Annotated[str, InjectedToolCallId] = None,
+    filter: Annotated[Optional[dict], "Optional filter in JSON format. For library: {'object_key': 'path', 'mimetype': 'image/png'}. For documents: {'attachment_url': 'file.pdf'}"],
+    limit: Annotated[int, "Maximum number of results to retrieve (default: 5)"],
+    offset: Annotated[int, "The offset for pagination, starting from 0"],
+    runtime: ToolRuntime,
 ) -> Command:
     """
     Universal search tool for finding relevant content across library and uploaded documents.
@@ -201,7 +201,6 @@ def search_knowledge_base(
                 "messages": [
                     ToolMessage(
                         content="Error: Missing user_id in configuration",
-                        tool_call_id=tool_call_id
                     )
                 ]
             })
@@ -226,7 +225,6 @@ def search_knowledge_base(
                     "messages": [
                         ToolMessage(
                             content="Error: Missing conversation_id for messages search",
-                            tool_call_id=tool_call_id
                         )
                     ]
                 })
@@ -244,7 +242,6 @@ def search_knowledge_base(
                 "messages": [
                     ToolMessage(
                         content=f"Error: Unsupported source '{source}'",
-                        tool_call_id=tool_call_id
                     )
                 ]
             })
@@ -255,7 +252,6 @@ def search_knowledge_base(
                 "messages": [
                     ToolMessage(
                         content="No results found matching your query.",
-                        tool_call_id=tool_call_id
                     )
                 ]
             })
@@ -267,7 +263,6 @@ def search_knowledge_base(
             "messages": [
                 ToolMessage(
                     content="Search Results:\n" + "\n".join(formatted_results),
-                    tool_call_id=tool_call_id
                 )
             ]
         })
@@ -277,7 +272,6 @@ def search_knowledge_base(
             "messages": [
                 ToolMessage(
                     content=f"Error: Failed to execute search - {str(e)}",
-                    tool_call_id=tool_call_id
                 )
             ]
         })
@@ -301,7 +295,7 @@ def _determine_mime_type(response: httpx.Response, url: str) -> Optional[str]:
 @tool
 def read_url(
     url: Annotated[str, "URL to read content from (supports images)"],
-    tool_call_id: Annotated[str, InjectedToolCallId],
+    runtime: ToolRuntime,
 ) -> Command:
     """
     Read content from a specified URL (supports images).
@@ -328,7 +322,6 @@ def read_url(
                 "messages": [
                     ToolMessage(
                         content=f"Successfully read image from URL: {url}",
-                        tool_call_id=tool_call_id
                     ),
                     HumanMessage(
                         content=[
@@ -347,7 +340,6 @@ def read_url(
             "messages": [
                 ToolMessage(
                     content=f"Unsupported content type: {mime_type or 'unknown'}",
-                    tool_call_id=tool_call_id
                 ),
             ]
         })
@@ -358,7 +350,6 @@ def read_url(
             "messages": [
                 ToolMessage(
                     content=f"Failed to fetch URL: {str(e)}",
-                    tool_call_id=tool_call_id
                 ),
             ]
         })
@@ -368,7 +359,6 @@ def read_url(
             "messages": [
                 ToolMessage(
                     content=f"Error: {str(e)}",
-                    tool_call_id=tool_call_id
                 ),
             ]
         })

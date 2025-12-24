@@ -62,8 +62,6 @@ class GameGeneratorV1(BaseInternalAgent):
         toolset = self.get_toolset(agent_config.model)
         
         system_prompt = self.get_prompt()
-        with open("prompt_draft/game_generator_prompt_draft.md", "r") as f:
-            system_prompt = f.read()
             
         middleware = self.get_middleware()
         
