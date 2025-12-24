@@ -3,7 +3,7 @@ from typing import Dict, Any, List, Optional, AsyncGenerator
 from langgraph.graph.state import CompiledStateGraph
 
 from config.logging import get_logger
-from model import (
+from model.completion import (
     AgentConfig,
     StreamingChunk,
     Attachment,

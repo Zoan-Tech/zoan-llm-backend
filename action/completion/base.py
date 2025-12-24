@@ -5,21 +5,23 @@ import httpx
 import asyncio
 import threading
 from collections import defaultdict
+from io import BytesIO
+from PIL import Image
 from config.logging import get_logger
 from typing import Dict, Any, List, Tuple, Optional
 
-from model import (
+from model.completion import (
     StreamingChunk,
     ChunkType,
-ChunkContent,
+    ChunkContent,
     StreamingStatus,
     ResponseMetadata,
     Attachment,
     Metadata,
 )
-from internal.graph.builder.graph import GraphBuilder
+from internal.graph import GraphBuilder
 from langfuse.langchain import CallbackHandler
-from services.document_processor import document_processor
+from internal.document_processor import document_processor
 from utils.const.multimodal import (
     IMAGE_MIME_TYPES,
     PDF_MIME_TYPES,
@@ -41,16 +43,28 @@ DEFAULT_RECURSION_LIMIT = 100
 
 class CompletionInput:
     @classmethod
-    def _process_image_attachment(cls, attachment: Attachment) -> Optional[dict[str, Any]]:
+    def _process_image_attachment(cls, attachment: Attachment) -> Optional[list[dict[str, Any]]]:
         """Process image attachment and return data URL."""
         try:
-            image_data = base64.b64encode(httpx.get(attachment.url).content).decode("utf-8")
+            # Download image content
+            image_content = httpx.get(attachment.url).content
+            image_data = base64.b64encode(image_content).decode("utf-8")
             
-            return {
-                "type": "image",
-                "base64": image_data,
-                "mime_type": attachment.mime_type,
-            }
+            # Extract image dimensions
+            image = Image.open(BytesIO(image_content))
+            width, height = image.size
+            
+            return [
+                {
+                    "type": "text",
+                    "text": "Image width: {}, height: {}".format(width, height)
+                },
+                {
+                    "type": "image",
+                    "base64": image_data,
+                    "mime_type": attachment.mime_type,
+                }
+            ]
         except Exception as e:
             logger.error(f"Failed to fetch or encode image from {attachment.url}: {str(e)}")
             return None
@@ -192,7 +206,7 @@ class BaseCompletionAction:
     def _extract_tool_outputs(self, chunk, agent_name: str) -> List[ChunkContent]:
         chunks = []
         if chunk.type == "tool" and type(chunk.content) is str:
-            if chunk.name.startswith("zoan_internal") or chunk.name.startswith("transfer_back_"):
+            if chunk.name.startswith("zoan_internal") or chunk.name == 'write_todos':
                 return chunks
             
             tool_output = (
@@ -228,9 +242,6 @@ class BaseCompletionAction:
                             "game_version": game_version
                         }
                     ))
-            if chunk.name == 'write_todos':
-                # TODO: format proper middleware output
-                pass  # Ignore write_todos tool output
                 
         return chunks
 
@@ -306,40 +317,52 @@ class BaseCompletionAction:
         """Create input configuration for the graph with image attachments."""
         mutimodal_input = []
         for attachment in attachments:
-            content_blocks = [
-                {
-                    "type": "text",
-                    "text": "Attachment: {}".format(attachment.url)
-                }
-            ]
-            if attachment.mime_type in IMAGE_MIME_TYPES:
-                image_input = CompletionInput._process_image_attachment(attachment)
-                if image_input:
-                    content_blocks.append(image_input)
-            elif attachment.mime_type in PDF_MIME_TYPES:
-                pdf_input = CompletionInput._process_pdf_attachment(attachment)
-                if pdf_input:
-                    content_blocks.append(pdf_input)
-            elif attachment.mime_type in AUDIO_MIME_TYPES:
-                audio_input = CompletionInput._process_audio_attachment(attachment)
-                if audio_input:
-                    content_blocks.append(audio_input)
-            elif attachment.mime_type in VIDEO_MIME_TYPES:
-                video_input = CompletionInput._process_video_attachment(attachment)
-                if video_input:
-                    content_blocks.append(video_input)
-            elif attachment.mime_type in DOCS_MIME_TYPES:
-                # Process and store document in Qdrant (doesn't add to multimodal input)
-                CompletionInput._process_doc_attachment(
-                    attachment,
-                    user_id=user_id,
-                    conversation_id=conversation_id
+            if attachment.type == "file":
+                content_blocks = [
+                    {
+                        "type": "text",
+                        "text": "Attachment: {}".format(attachment.url)
+                    }
+                ]
+                if attachment.mime_type in IMAGE_MIME_TYPES:
+                    image_input = CompletionInput._process_image_attachment(attachment)
+                    if image_input:
+                        content_blocks.extend(image_input)
+                elif attachment.mime_type in PDF_MIME_TYPES:
+                    pdf_input = CompletionInput._process_pdf_attachment(attachment)
+                    if pdf_input:
+                        content_blocks.append(pdf_input)
+                elif attachment.mime_type in AUDIO_MIME_TYPES:
+                    audio_input = CompletionInput._process_audio_attachment(attachment)
+                    if audio_input:
+                        content_blocks.append(audio_input)
+                elif attachment.mime_type in VIDEO_MIME_TYPES:
+                    video_input = CompletionInput._process_video_attachment(attachment)
+                    if video_input:
+                        content_blocks.append(video_input)
+                elif attachment.mime_type in DOCS_MIME_TYPES:
+                    # Process and store document in Qdrant (doesn't add to multimodal input)
+                    CompletionInput._process_doc_attachment(
+                        attachment,
+                        user_id=user_id,
+                        conversation_id=conversation_id
+                    )
+                mutimodal_input.append(
+                    HumanMessage(
+                        content_blocks=content_blocks
+                    )
                 )
-            mutimodal_input.append(
-                HumanMessage(
-                    content_blocks=content_blocks
+            elif attachment.type == "folder":
+                mutimodal_input.append(
+                    HumanMessage(
+                        content_blocks=[
+                            {
+                                "type": "text",
+                                "text": "Folder imported from Knowledge Hub: {}".format(attachment.url)
+                            }
+                        ]
+                    )
                 )
-            )
             
         return mutimodal_input
 

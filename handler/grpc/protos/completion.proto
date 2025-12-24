@@ -60,6 +60,9 @@ message AgentConfig {
 message Attachment {
   string url = 1;
   string mime_type = 2;
+  string file_name = 3;
+  string file_size = 4;
+  string type = 5;
 }
 
 // ============ Metadata ============

@@ -1,124 +1,52 @@
-from contextlib import asynccontextmanager
-from dotenv import load_dotenv
-load_dotenv()  # Load environment variables from .env file
+"""Main application entry point."""
 
-from fastapi import FastAPI, HTTPException
-from fastapi.exceptions import RequestValidationError
+from contextlib import asynccontextmanager
 import threading
 import time
-import asyncio
+
+from dotenv import load_dotenv
+
+# Load environment variables before other imports
+load_dotenv()
+
+from fastapi import FastAPI
 
 from config.logging import setup_logging, get_logger
-import grpc
-from concurrent import futures
-from handler.grpc.completion import CompletionServiceServicer
-from handler.grpc.grpc_generated.completion import completion_pb2_grpc
+from handler.grpc.server import GRPCServerManager
+from handler.router.setup import configure_app
+from internal.database import init_db
 
-from handler.consumer import message_consumer
-from services.connector.kafka_service import KafkaConsumer
-
+# Setup logging
 setup_logging()
-
 logger = get_logger()
 
-from config import Config
-from handler.router import (
-    health_check,
-)
+# Initialize gRPC server manager
+grpc_manager = GRPCServerManager()
 
-# Global gRPC server and Kafka consumer
-grpc_server = None
-grpc_thread = None
-kafka_consumer = None
-kafka_thread = None
-
-def start_grpc_server():
-    """Start the gRPC server in a separate thread."""
-    global grpc_server
-    grpc_server = grpc.server(futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS))
-    completion_pb2_grpc.add_CompletionServiceServicer_to_server( # type: ignore
-        CompletionServiceServicer(), grpc_server
-    )
-    
-    # Start gRPC server
-    listen_addr = f'[::]:{Config.GRPC_PORT}'
-    grpc_server.add_insecure_port(listen_addr)
-    grpc_server.start()
-    logger.info(f"gRPC server started on {listen_addr}")
-    
-    # Keep the server running
-    try:
-        grpc_server.wait_for_termination()
-    except KeyboardInterrupt:
-        logger.info("gRPC server shutdown requested")
-
-def start_kafka_consumer():
-    """Start the Kafka consumer in the asyncio event loop."""
-    global kafka_consumer
-    
-    # Create a new event loop for this thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    try:
-        consumer_topics = list(message_consumer._handlers.keys())
-        logger.info(f"Starting Kafka consumer for topics: {consumer_topics}")
-        
-        kafka_consumer = KafkaConsumer(
-            asyncio_loop=loop,
-            consumer_topics=consumer_topics,
-        )
-        
-        kafka_consumer.start_consumer(message_consumer.on_message)
-        
-        # Keep the loop running
-        loop.run_forever()
-    except Exception as e:
-        logger.error(f"Error starting Kafka consumer: {str(e)}")
-    finally:
-        loop.close()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    global grpc_thread
-    global kafka_thread
+    """Manage application lifecycle (startup and shutdown)."""
+    # Startup - Initialize database
+    logger.info("Initializing database tables...")
+    init_db()
+    logger.info("Database tables initialized")
     
     # Start gRPC server
-    grpc_thread = threading.Thread(target=start_grpc_server, daemon=True)
+    grpc_thread = threading.Thread(target=grpc_manager.run, daemon=True)
     grpc_thread.start()
     logger.info("Started gRPC server thread")
     
-    # Start Kafka consumer
-    kafka_thread = threading.Thread(target=start_kafka_consumer, daemon=True)
-    kafka_thread.start()
-    logger.info("Started Kafka consumer thread")
-    
-    # Give the servers a moment to start
+    # Give the server a moment to start
     time.sleep(1)
     
     yield
     
     # Shutdown
-    if grpc_server:
-        grpc_server.stop(grace=5.0)
-        logger.info("gRPC server stopped")
-    
-    if kafka_consumer:
-        kafka_consumer.close()
-        logger.info("Kafka consumer stopped")
+    grpc_manager.stop(grace=5.0)
 
-from handler.utils import custom_http_exception_handler, validation_exception_handler
 
+# Create and configure FastAPI application
 app = FastAPI(lifespan=lifespan)
+configure_app(app)
 
-def configure_app(app: FastAPI):
-    """Configure the FastAPI application with routes and exception handlers.
-    """
-    app.include_router(health_check.router, prefix="/api/v1", tags=["health_check"])
-    # app.include_router(completion.router, prefix="/api/v1", tags=["completion"])
-    
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)
-    app.add_exception_handler(HTTPException, custom_http_exception_handler)
-
-configure_app(app)  # Configure the app

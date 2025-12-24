@@ -10,12 +10,6 @@ class Defaults:
     MINIO_ACCESS_KEY = "minioadmin"
     MINIO_SECRET_KEY = "minioadmin"
     
-    KAFKA_TOPIC_REQUEST = "llm.channel.completion"
-    KAFKA_TOPIC_RESPONSE = "llm.channel.response"
-    KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-    KAFKA_GROUP_ID = "llm_channel_group"
-    KAFKA_TOPIC_MINIO_NOTIFY = "minio.notifications"
-    
     POSTGRES_CONN_STRING = "postgresql://user:password@localhost:5432/mydatabase"
     FERNET_SECRET = "your-fernet-secret"
     
@@ -56,12 +50,6 @@ class Config:
     MINIO_GAMES_BUCKET: str = os.environ.get(SecretEnum.MINIO_GAMES_BUCKET.value, Defaults.MINIO_GAMES_BUCKET)
     MINIO_LIBRARY_BUCKET: str = os.environ.get(SecretEnum.MINIO_LIBRARY_BUCKET.value, Defaults.MINIO_LIBRARY_BUCKET)
     MINIO_BROWSER_URL: str = os.environ.get(SecretEnum.MINIO_BROWSER_URL.value, f"http://{MINIO_ENDPOINT}:{MINIO_PORT}/browser")
-
-    KAFKA_BOOTSTRAP_SERVERS: str = os.environ.get(SecretEnum.KAFKA_BOOTSTRAP_SERVERS.value, Defaults.KAFKA_BOOTSTRAP_SERVERS)
-    KAFKA_TOPIC_REQUEST: str = os.environ.get(SecretEnum.KAFKA_TOPIC_REQUEST.value, Defaults.KAFKA_TOPIC_REQUEST)
-    KAFKA_TOPIC_RESPONSE: str = os.environ.get(SecretEnum.KAFKA_TOPIC_RESPONSE.value, Defaults.KAFKA_TOPIC_RESPONSE)
-    KAFKA_GROUP_ID: str = os.environ.get(SecretEnum.KAFKA_GROUP_ID.value, Defaults.KAFKA_GROUP_ID)
-    KAFKA_TOPIC_MINIO_NOTIFY: str = os.environ.get(SecretEnum.KAFKA_TOPIC_MINIO_NOTIFY.value, Defaults.KAFKA_TOPIC_MINIO_NOTIFY)
     
     QDRANT_URL: str = os.environ.get(SecretEnum.QDRANT_URL.value, Defaults.QDRANT_URL)
     QDRANT_API_KEY: Optional[str] = os.environ.get(SecretEnum.QDRANT_API_KEY.value)
