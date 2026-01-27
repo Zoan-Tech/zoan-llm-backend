@@ -194,7 +194,7 @@ class AgentBuilder:
                 logger.warning(f"[GraphBuilder] Workflow '{workflow.name}' has no steps")
 
     @graph_builder_exception_handler("Failed to build agent")
-    def build_agent(self, agent_config: AgentConfig):
+    def build_agent(self, agent_config: AgentConfig, **kwargs) -> Any:
         """
         Build a react agent using the provided agent configuration.
         """

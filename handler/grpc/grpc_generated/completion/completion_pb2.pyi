@@ -73,7 +73,7 @@ class AgentWorkflow(_message.Message):
     def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., steps: _Optional[_Iterable[_Union[StepModule, _Mapping]]] = ...) -> None: ...
 
 class AgentConfig(_message.Message):
-    __slots__ = ("id", "name", "model", "model_kwargs", "description", "instruction", "system_prompt", "is_enabled", "is_primary", "workflows", "stream_usage")
+    __slots__ = ("id", "name", "model", "model_kwargs", "description", "instruction", "system_prompt", "is_enabled", "is_primary", "workflows", "stream_usage", "type", "agent_kya")
     ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     MODEL_FIELD_NUMBER: _ClassVar[int]
@@ -85,6 +85,8 @@ class AgentConfig(_message.Message):
     IS_PRIMARY_FIELD_NUMBER: _ClassVar[int]
     WORKFLOWS_FIELD_NUMBER: _ClassVar[int]
     STREAM_USAGE_FIELD_NUMBER: _ClassVar[int]
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    AGENT_KYA_FIELD_NUMBER: _ClassVar[int]
     id: str
     name: str
     model: str
@@ -96,7 +98,9 @@ class AgentConfig(_message.Message):
     is_primary: bool
     workflows: _containers.RepeatedCompositeFieldContainer[AgentWorkflow]
     stream_usage: bool
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., model: _Optional[str] = ..., model_kwargs: _Optional[_Union[ModelKwargs, _Mapping]] = ..., description: _Optional[str] = ..., instruction: _Optional[str] = ..., system_prompt: _Optional[str] = ..., is_enabled: bool = ..., is_primary: bool = ..., workflows: _Optional[_Iterable[_Union[AgentWorkflow, _Mapping]]] = ..., stream_usage: bool = ...) -> None: ...
+    type: str
+    agent_kya: str
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., model: _Optional[str] = ..., model_kwargs: _Optional[_Union[ModelKwargs, _Mapping]] = ..., description: _Optional[str] = ..., instruction: _Optional[str] = ..., system_prompt: _Optional[str] = ..., is_enabled: bool = ..., is_primary: bool = ..., workflows: _Optional[_Iterable[_Union[AgentWorkflow, _Mapping]]] = ..., stream_usage: bool = ..., type: _Optional[str] = ..., agent_kya: _Optional[str] = ...) -> None: ...
 
 class Attachment(_message.Message):
     __slots__ = ("url", "mime_type", "file_name", "file_size", "type")

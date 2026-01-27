@@ -7,7 +7,9 @@ from langgraph_swarm import create_handoff_tool
 
 PRIMARY_AGENT_NAME = "supervisor"
 
+
 class BaseInternalAgent(ABC):
+    SANITIZED_NAME = ""
     PROMPT_NAME = ""
     
     def __init__(
@@ -15,6 +17,7 @@ class BaseInternalAgent(ABC):
         prompt_manager: BasePromptManager = langfuse_prompt_manager,
     ):
         self.prompt_manager = prompt_manager
+        self.handoff_tools = []
         
     def get_prompt(self, **kwargs) -> str:
         prompt = self.prompt_manager.get_prompt(
@@ -22,6 +25,7 @@ class BaseInternalAgent(ABC):
             label=Config.LANGFUSE_PROMPT_LABEL,
             version=Config.LANGFUSE_VERSION_ID,
         )
+            
         compiled_prompt = prompt.compile(**kwargs)
         return compiled_prompt
     
@@ -38,20 +42,16 @@ class BaseInternalAgent(ABC):
             **agent_config.model_kwargs.model_dump(),
         )
         
-    def _prepare_handoff_tools(self, is_primary: bool = False, agent_names: list[str] = []) -> list:
-        if is_primary:
+    def _prepare_handoff_tools(
+        self,
+        handoff_instructions: dict[str, list[str]]
+    ) -> list:
+        if handoff_instructions.get(self.SANITIZED_NAME):
             self.handoff_tools = [
                 create_handoff_tool(
                     agent_name=agent_name,
                     name=f"zoan_internal_handoff_to_{agent_name}",
-                    description=f"Transfer control to agent '{agent_name}' to handle user corresponding requests"
-                ) for agent_name in agent_names if agent_name != PRIMARY_AGENT_NAME
-            ]
-        else:
-            self.handoff_tools = [
-                create_handoff_tool(
-                    agent_name=PRIMARY_AGENT_NAME,
-                    name=f"zoan_internal_handoff_to_{PRIMARY_AGENT_NAME}",
-                    description="Complete current task, return control to the primary agent"
+                    description=f"Handoff current conversation to {agent_name} to if you need them to continue assisting the user.",
                 )
+                for agent_name in handoff_instructions[self.SANITIZED_NAME]
             ]

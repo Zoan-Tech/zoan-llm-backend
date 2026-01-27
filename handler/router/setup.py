@@ -7,6 +7,7 @@ from handler.router import (
     health_check,
     media,
     vectorizer,
+    graph,
 )
 from handler.utils import custom_http_exception_handler, validation_exception_handler
 
@@ -16,6 +17,7 @@ def configure_routes(app: FastAPI) -> None:
     app.include_router(health_check.router, prefix="/api/v1", tags=["health_check"])
     app.include_router(media.description.router, prefix="/api/v1", tags=["media_description"])
     app.include_router(vectorizer.router, prefix="/api/v1", tags=["vectorizer"])
+    app.include_router(graph.action.router, prefix="/api/v1", tags=["graph"])
 
 
 def configure_exception_handlers(app: FastAPI) -> None:

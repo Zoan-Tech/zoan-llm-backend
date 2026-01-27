@@ -7,6 +7,7 @@ from model.completion.agent import (
     AgentWorkflow,
     StepModule,
     ModelKwargs,
+    AgentKYA,
 )
 
 from model.completion.enums import (
@@ -49,6 +50,13 @@ class Metadata(BaseModel):
         False,
         description="Flag indicating if web search is enabled for this request"
     )
+    
+    command: Optional[str] = Field(
+        None,
+        description="Optional command to be executed"
+    )
+    
+    
 
 
 class CompletionRequest(BaseModel):

@@ -1,4 +1,9 @@
 from typing import Optional
+from enum import Enum
+from pydantic import SecretStr
+from utils.secret_manager import secret_manager
+from config import Config
+import json
 
 from pydantic import BaseModel, Field
 
@@ -73,8 +78,24 @@ class AgentWorkflow(BaseModel):
 # Agent Configuration
 # ============================================================================
 
+class AgentType(str, Enum):
+    """Type of the agent."""
+    PRIMARY     = "primary"     # Supervisor/orchestrator
+    GENERATOR   = "generator"   # Code/app generation
+    INFO        = "info"        # QA, analysis, research
+    INTEGRATION = "integration" # API calls, non-financial actions
+    TRADING     = "trading"     # Web3 transactions, revenue-generating
+
+class AgentKYA(BaseModel):
+    """KYA for the agent."""
+    wallet_address: str = Field(None, description="Wallet address")
+    wallet_private_key: Optional[SecretStr] = Field(None, description="Wallet private key")
+    api_key: Optional[SecretStr] = Field(None, description="API key")
+    api_secret: Optional[SecretStr] = Field(None, description="API secret")
+
 class AgentConfig(BaseModel):
     """Configuration for an agent including model settings and workflows."""
+    id: Optional[str] = Field(None, description="Unique identifier for the agent")
     name: str = Field(..., description="Name of the agent")
     description: Optional[str] = Field(None, description="Description of the agent")
     instruction: Optional[str] = Field(None, description="Instruction for the agent")
@@ -84,6 +105,9 @@ class AgentConfig(BaseModel):
         default_factory=ModelKwargs,
         description="Additional model configuration"
     )
+
+    type: AgentType = Field(..., description="Type of the agent")
+    agent_kya: Optional[str] = Field(None, description="Agent key")
     
     is_enabled: bool = Field(..., description="Whether the agent is enabled")
     is_primary: bool = Field(..., description="Whether the agent is the primary agent")
@@ -91,3 +115,13 @@ class AgentConfig(BaseModel):
     workflows: list[AgentWorkflow] = Field([], description="List of agent workflows")
     
     stream_usage: bool = Field(True, description="Whether to stream usage")
+    
+    def decrypt_fields(self) -> AgentKYA:
+        """Decrypt sensitive fields using the secret manager."""
+        if self.agent_kya:
+            decrypted_kya = secret_manager.decrypt(self.agent_kya)
+            # Parse JSON string to dict if needed
+            if isinstance(decrypted_kya, str):
+                decrypted_kya = json.loads(decrypted_kya)
+                
+            return AgentKYA(**decrypted_kya)
