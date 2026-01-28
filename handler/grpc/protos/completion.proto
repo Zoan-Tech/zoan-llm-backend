@@ -54,6 +54,9 @@ message AgentConfig {
   repeated AgentWorkflow workflows = 10;
 
   bool stream_usage = 11;
+
+  string type = 12;
+  string agent_kya = 13;
 }
 
 // ============ Attachment ============

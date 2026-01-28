@@ -52,11 +52,11 @@ class GameGeneratorV1(BaseInternalAgent):
             TodoListMiddleware(),
         ]
         
-        return middlewares
+        return base_middleware + middlewares
     
     def get_agent(self, agent_config: AgentConfig, **kwargs):
         """Create the agent with the LLM and tools"""
-        self._prepare_handoff_tools(agent_config.is_primary)
+        self._prepare_handoff_tools(handoff_instructions=kwargs.get("handoff_instructions", {}))
         llm = AgentBuilder._construct_llm_model(agent_config)
         
         toolset = self.get_toolset(agent_config.model)

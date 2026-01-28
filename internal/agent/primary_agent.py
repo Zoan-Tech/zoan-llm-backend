@@ -35,7 +35,8 @@ class PrimaryAgent(BaseInternalAgent):
         return base_middleware
     
     def get_agent(self, agent_config: AgentConfig, **kwargs):
-        self._prepare_handoff_tools(agent_config.is_primary, agent_names=kwargs.get("agent_names", []))
+        self._prepare_handoff_tools(handoff_instructions=kwargs.get("handoff_instructions", {}))
+        
         llm = self._construct_llm_model(agent_config)
         toolset = self.get_toolset(
             agent_config.model,

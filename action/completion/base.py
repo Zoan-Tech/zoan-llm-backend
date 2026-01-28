@@ -18,6 +18,7 @@ from model.completion import (
     ResponseMetadata,
     Attachment,
     Metadata,
+    AgentConfig
 )
 from internal.graph import GraphBuilder
 from langfuse.langchain import CallbackHandler
@@ -31,6 +32,7 @@ from utils.const.multimodal import (
 )
 
 from langchain.messages import HumanMessage
+from langgraph_supervisor.handoff import _normalize_agent_name
 
 # Constants and Configuration
 logger = get_logger()
@@ -275,6 +277,20 @@ class BaseCompletionAction:
                         ))
             return content_list
         return []
+    
+    def _extract_action_request(self, chunk, agent_name: str) -> List[ChunkContent]:
+        """Extract action request from chunk's additional kwargs."""
+        chunks = []
+        if hasattr(chunk, 'value'):
+            chunks.append(ChunkContent(
+                type=ChunkType.ACTION_REQUEST,
+                value=chunk.value["message"],
+                agent=agent_name,
+                index=0,
+                metadata=chunk.value
+            ))
+            
+        return chunks
 
     def _convert_chunk_content(self, chunk, agent_name: str) -> StreamingChunk:
         """Convert chunk content to the StreamingChunk model."""
@@ -285,7 +301,10 @@ class BaseCompletionAction:
         
         # Extract text content
         content_list.extend(self._extract_text_content(chunk, agent_name))
-                
+        
+        return content_list
+    
+    def _convert_streaming_chunk(self, chunk, content_list: list, agent_name: str) -> StreamingChunk:       
         response_metadata = ResponseMetadata(
             status=chunk.response_metadata.get("status", "")
         )
@@ -306,7 +325,8 @@ class BaseCompletionAction:
 
     def _process_chunk(self, agent_name: str, chunk) -> StreamingChunk:
         """Process chunk content and extract annotations."""
-        return self._convert_chunk_content(chunk, agent_name)
+        content_list = self._convert_chunk_content(chunk, agent_name)
+        return self._convert_streaming_chunk(chunk, content_list, agent_name)
     
     def _graph_multimodal_input(
         self, 
@@ -421,7 +441,9 @@ class BaseCompletionAction:
         self, 
         user_id: str, 
         conversation_id: str, 
-        auth_token: str = ""
+        auth_token: str = "",
+        agent_kyas: Optional[Dict[str, Any]] = None,
+        metadata: dict = {},
     ) -> Dict[str, Any]:
         """
         Create configuration for graph execution.
@@ -434,7 +456,7 @@ class BaseCompletionAction:
         Returns:
             Configuration dictionary for graph execution
         """
-        return {
+        config = {
             "configurable": {
                 "user_id": user_id,
                 "thread_id": conversation_id,
@@ -443,6 +465,16 @@ class BaseCompletionAction:
             "callbacks": [self.langfuse_handler],
             "recursion_limit": DEFAULT_RECURSION_LIMIT,
         }
+        if agent_kyas:
+            config["configurable"]["agent_kya"] = agent_kyas
+        
+        config["configurable"].update(metadata)
+        agent_id = {
+            _normalize_agent_name(agent.name): agent.id for agent in metadata.get("agent_mention_event").agent_configs
+        }
+        config["configurable"]["agent_id"] = agent_id
+        
+        return config
     
     async def _get_conversation_messages(self, config: Dict[str, Any]) -> List:
         """

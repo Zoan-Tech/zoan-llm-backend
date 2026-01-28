@@ -2,7 +2,7 @@ import hashlib
 import json
 import threading
 from collections import OrderedDict
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from langgraph.graph.state import CompiledStateGraph
 
 from langgraph_swarm import create_swarm
@@ -14,6 +14,9 @@ from internal.agent import (
     BaseInternalAgent,
     game_generator_v1,
     primary_agent as built_in_primary_agent,
+    aster_trading_agent,
+    hyperliquid_trading_agent,
+    coingecko_agent,
 )
 from internal.builder.agent import AgentBuilder
 from internal.builder.module.client import ModuleClient, module_client
@@ -23,12 +26,15 @@ from internal.builder.memory import Memory, memory
 from model.completion import AgentConfig
 from utils.enums import *
 from utils.exception_handler import GraphBuilderError, graph_builder_exception_handler
-    
+
 logger = get_logger()
 
 INTERNAL_AGENT: Dict[str, BaseInternalAgent] = {
     'primary_agent': built_in_primary_agent,
     game_generator_v1.SANITIZED_NAME: game_generator_v1,
+    aster_trading_agent.SANITIZED_NAME: aster_trading_agent,
+    hyperliquid_trading_agent.SANITIZED_NAME: hyperliquid_trading_agent,
+    coingecko_agent.SANITIZED_NAME: coingecko_agent,
 }
 
 # Default cache configuration
@@ -120,7 +126,11 @@ class GraphBuilder:
             self._cache_evictions += 1
             logger.debug(f"[GraphBuilder] Evicted LRU cache entry: {evicted_key[:16]}...")
 
-    def build_subgraph(self, agent_configs: list[AgentConfig]) -> list[Any]:
+    def build_subgraph(
+        self,
+        agent_configs: list[AgentConfig],
+        handoff_instructions: dict[str, list[str]],
+    ) -> list[Any]:
         """
         Build a state graph for the agents.
         """
@@ -135,9 +145,9 @@ class GraphBuilder:
                 if _normalize_agent_name(agent_config.name) in INTERNAL_AGENT.keys():
                     logger.debug(f"[GraphBuilder] Adding internal agent '{agent_config.name}'")
                     
-                    agent = INTERNAL_AGENT[_normalize_agent_name(agent_config.name)].get_agent(agent_config)
+                    agent = INTERNAL_AGENT[_normalize_agent_name(agent_config.name)].get_agent(agent_config, handoff_instructions=handoff_instructions)
                 else:
-                    agent = self.agent_builder.build_agent(agent_config)
+                    agent = self.agent_builder.build_agent(agent_config, handoff_instructions=handoff_instructions)
                     
                 successfully_added.append(agent)
                 
@@ -151,40 +161,71 @@ class GraphBuilder:
         self,
         primary_agent_config: AgentConfig,
         web_search: bool = False,
-        agent_names: list[str] = [],
         current_avail_agents: str = "",
+        handoff_instructions: dict[str, list[str]] = {},
     ) -> Any:
         """
         Build the primary agent for the graph.
         """
-        
         primary_agent = built_in_primary_agent.get_agent(
             primary_agent_config,
             web_search=web_search,
-            agent_names=agent_names,
             current_avail_agents=current_avail_agents,
+            handoff_instructions=handoff_instructions,
         )
+        
         return primary_agent
+    
+    def _build_handoff_instructions(
+        self,
+        agent_names: list[str],
+    ) -> dict[str, list[str]]:
+        """
+        Build handoff instructions for agents.
+        """
+        instructions = {}
+        normalized_agent_names = [_normalize_agent_name(name) for name in agent_names]
+        for agent_name in normalized_agent_names:
+            other_agents = [name for name in normalized_agent_names if name != agent_name]
+            instructions[agent_name] = other_agents
+            
+        return instructions
 
     @graph_builder_exception_handler("Failed to build state graph")
-    def build_graph(self, agent_configs: list[AgentConfig], web_search: bool = False) -> CompiledStateGraph:
+    def build_graph(
+        self,
+        agent_configs: list[AgentConfig],
+        web_search: bool = False,
+    ) -> CompiledStateGraph:
         """
         Build a state graph for the agents.
         """
+        agents = []
+        
+        agent_names = [agent_config.name for agent_config in agent_configs]
+        handoff_instructions = self._build_handoff_instructions(agent_names)
+
+        # Check if primary agent should be added
         primary_agent_config = next((agent_config for agent_config in agent_configs if agent_config.is_primary), None)
         if not primary_agent_config:
-            raise GraphBuilderError("One agent must be marked as primary")
+            raise GraphBuilderError("No primary agent configured. Please set one agent as primary.")
         
-        agent_configs = [agent_config for agent_config in agent_configs if not agent_config.is_primary]
         agent_status = "\n".join([f"- {agent.name}: {agent.description}. Availability: {agent.is_enabled}" for agent in agent_configs])
-
-        agents = self.build_subgraph(agent_configs)
-        agent_names = [agent.name for agent in agents]
-        primary_agent = self.build_primary_agent(primary_agent_config, web_search=web_search, agent_names=agent_names, current_avail_agents=agent_status)
+        primary_agent = self.build_primary_agent(
+            primary_agent_config,
+            web_search=web_search,
+            current_avail_agents=agent_status,
+            handoff_instructions=handoff_instructions,
+        )
+        
+        agents.append(primary_agent)
+        default_active_agent = primary_agent.name
+            
+        agents = self.build_subgraph(agent_configs, handoff_instructions)
         
         builder = create_swarm(
-            agents=[primary_agent] + agents,
-            default_active_agent=primary_agent.name,
+            agents=agents,
+            default_active_agent=default_active_agent,
         )
         
         return builder.compile(
@@ -247,3 +288,26 @@ class GraphBuilder:
             )
             
             return compiled_graph
+        
+    def get_agent(
+        self,
+        agent_config: AgentConfig, # This is sanitized name of the agent
+        **kwargs
+    ) -> Optional[CompiledStateGraph]:
+        """
+        Get an internal agent by its sanitized name.
+        
+        Args:
+            agent_id: Sanitized name of the agent
+        
+        Returns:
+            BaseInternalAgent instance
+        
+        Raises:
+            KeyError: If the agent is not found
+        """
+        if _normalize_agent_name(agent_config.name) in INTERNAL_AGENT.keys():
+            return INTERNAL_AGENT[_normalize_agent_name(agent_config.name)].get_agent(agent_config, checkpointer=self.memory.saver, store=self.memory.store, **kwargs)
+        else:
+            logger.error(f"[GraphBuilder] Agent '{agent_config.name}' not found among internal agents.")
+            return None

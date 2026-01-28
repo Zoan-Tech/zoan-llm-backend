@@ -30,5 +30,6 @@ def get_db():
 def init_db():
     """Initialize database tables."""
     from internal.database.media_description.models import MediaDescriptionTask
+    from internal.database.kafka_events.models import KafkaEvent
     
     Base.metadata.create_all(bind=engine)
