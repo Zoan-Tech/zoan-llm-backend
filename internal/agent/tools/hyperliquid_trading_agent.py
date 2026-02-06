@@ -4,9 +4,7 @@ Provides functionality to open and close market trades on Hyperliquid testnet.
 """
 from langchain.tools import tool
 from model.completion import AgentKYA
-from model.graph import Action, InterruptObject
 from langchain_core.runnables.config import ensure_config
-from langgraph.types import interrupt
 from config.logging import get_logger
 from typing import Optional, Literal
 
@@ -16,165 +14,8 @@ from hyperliquid.utils import constants
 
 logger = get_logger()
 
-
-# @tool
-# def open_market_trade(
-#     symbol: str,
-#     is_buy: bool,
-#     size: float,
-#     reduce_only: bool = False,
-#     limit_price: Optional[float] = None,
-#     stop_loss_price: Optional[float] = None,
-#     take_profit_price: Optional[float] = None,
-# ):
-#     """
-#     Open a market trade position on Hyperliquid testnet.
-    
-#     This tool allows opening long or short positions with optional risk management parameters.
-    
-#     Args:
-#         symbol: Trading pair symbol (e.g., "BTC", "ETH", "SOL")
-#         is_buy: True for long position, False for short position
-#         size: Position size in base currency units (e.g., 0.1 BTC)
-#         reduce_only: If True, order can only reduce existing position (default: False)
-#         limit_price: Optional limit price for the order. If None, market order is used
-#         stop_loss_price: Optional stop loss price to automatically close losing positions
-#         take_profit_price: Optional take profit price to automatically close profitable positions
-    
-#     Returns:
-#         str: Result message indicating success or rejection
-        
-#     Examples:
-#         - Open long 0.1 BTC at market: open_market_trade("BTC", True, 0.1)
-#         - Open short 1 ETH with stop loss: open_market_trade("ETH", False, 1.0, stop_loss_price=3500)
-#         - Open long with limit and TP/SL: open_market_trade("SOL", True, 10, limit_price=100, stop_loss_price=95, take_profit_price=110)
-#     """
-#     config = ensure_config()
-#     configurable = config.get('configurable', {})
-#     user_info: Optional[AgentKYA] = configurable.get('agent_kya', {}).get("Hyperliquid Trading Agent")
-#     if not user_info:
-#         return "Error: User information for Hyperliquid Trading Agent not found in configuration."
-    
-#     wallet_private_key = user_info.wallet_private_key.get_secret_value()
-    
-#     # Create user-friendly message
-#     position_type = "long" if is_buy else "short"
-#     order_type_str = f"limit order at ${limit_price}" if limit_price else "market order"
-#     risk_mgmt = []
-#     if stop_loss_price:
-#         risk_mgmt.append(f"SL: ${stop_loss_price}")
-#     if take_profit_price:
-#         risk_mgmt.append(f"TP: ${take_profit_price}")
-#     risk_mgmt_str = f" ({', '.join(risk_mgmt)})" if risk_mgmt else ""
-    
-#     message = (
-#         f"Open {position_type} position on {symbol}\n"
-#         f"Size: {size} {symbol}\n"
-#         f"Order type: {order_type_str}{risk_mgmt_str}\n"
-#         f"Platform: Hyperliquid Testnet\n\n"
-#         f"Do you approve this trade?"
-#     )
-    
-#     interrupt_obj = InterruptObject(
-#         action_name="open_market_trade",
-#         message=message,
-#         requires_signature=False,
-#     )
-    
-#     logger.info(f"[HyperliquidAgent] Requesting approval for open_market_trade: {interrupt_obj.model_dump(exclude_none=True)}")
-    
-#     # Request user approval with interrupt
-#     response = interrupt(interrupt_obj.model_dump(exclude_none=True))
-    
-#     if response.get("action") == Action.REJECTED.value:
-#         return f"User rejected the open {position_type} position request for {symbol}."
-    
-#     if response.get("action") == Action.APPROVED.value:
-#         try:
-#             # Initialize Hyperliquid Exchange with private key (testnet)
-#             exchange = Exchange(
-#                 wallet=None,
-#                 base_url=constants.TESTNET_API_URL,
-#                 account_address=None,
-#             )
-            
-#             # Set the wallet from private key
-#             from eth_account import Account
-#             account = Account.from_key(wallet_private_key)
-#             exchange.wallet = account
-#             exchange.account_address = account.address
-            
-#             logger.info(f"[HyperliquidAgent] Executing trade on Hyperliquid testnet: {symbol} {position_type} {size}")
-            
-#             # Prepare order parameters
-#             is_buy_order = is_buy
-            
-#             # Place the order
-#             if limit_price:
-#                 # Limit order with GTC (Good til Cancel)
-#                 order_type = {"limit": {"tif": "Gtc"}}
-#                 order_result = exchange.order(
-#                     symbol,
-#                     is_buy_order,
-#                     size,
-#                     limit_price,
-#                     order_type,
-#                     reduce_only=reduce_only,
-#                 )
-#             else:
-#                 # Market order - use limit with IOC (Immediate or Cancel) and slippage price
-#                 info = Info(constants.TESTNET_API_URL)
-#                 mid_price = info.all_mids().get(symbol)
-#                 if not mid_price:
-#                     return f"Error: Could not fetch market price for {symbol}"
-                
-#                 # Convert to float as API returns string
-#                 mid_price = float(mid_price)
-                
-#                 # Use a price with significant slippage tolerance for market order
-#                 slippage_price = mid_price * 1.05 if is_buy else mid_price * 0.95
-                
-#                 # Round to 5 significant figures for price precision
-#                 from math import log10, floor
-#                 if slippage_price > 0:
-#                     sig_figs = 5
-#                     magnitude = floor(log10(abs(slippage_price)))
-#                     slippage_price = round(slippage_price, sig_figs - int(magnitude) - 1)
-                
-#                 logger.info(f"[HyperliquidAgent] Market order: mid_price={mid_price}, slippage_price={slippage_price}")
-                
-#                 # Use IOC (Immediate or Cancel) for market-like behavior
-#                 order_type = {"limit": {"tif": "Ioc"}}
-#                 order_result = exchange.order(
-#                     symbol,
-#                     is_buy_order,
-#                     size,
-#                     slippage_price,
-#                     order_type,
-#                     reduce_only=reduce_only,
-#                 )
-            
-#             logger.info(f"[HyperliquidAgent] Order result: {order_result}")
-            
-#             # Handle SL/TP if provided
-#             if stop_loss_price or take_profit_price:
-#                 # Note: Hyperliquid handles SL/TP via trigger orders
-#                 # This is a simplified implementation
-#                 logger.info(f"[HyperliquidAgent] SL/TP orders would be placed here")
-            
-#             # Return the raw order result
-#             return str(order_result)
-                
-#         except Exception as e:
-#             logger.error(f"[HyperliquidAgent] Error executing trade: {str(e)}", exc_info=True)
-#             return f"❌ Error executing trade: {str(e)}"
-    
-#     if response.get("action") == Action.EDITED.value:
-#         edited_size = response.get("size", size)
-#         edited_limit_price = response.get("limit_price")
-#         return f"User edited the order. New size: {edited_size}, New limit price: {edited_limit_price}. Please resubmit with updated parameters."
-    
-#     return f"Unexpected response action: {response.get('action')}"
+info = Info(constants.TESTNET_API_URL, skip_ws=True)
+AGENT_NAME = "Hyperliquid Trading Agent"
 
 @tool
 def place_limit_order(
@@ -212,11 +53,11 @@ def place_limit_order(
     """
     config = ensure_config()
     configurable = config.get('configurable', {})
-    user_info: Optional[AgentKYA] = configurable.get('agent_kya', {}).get("Hyperliquid Trading Agent")
-    if not user_info:
+    agent_wallet: Optional[AgentKYA] = configurable.get('agent_kya', {}).get(AGENT_NAME)
+    if not agent_wallet:
         return "Error: User information for Hyperliquid Trading Agent not found in configuration."
     
-    wallet_private_key = user_info.wallet_private_key.get_secret_value()
+    wallet_private_key = agent_wallet.wallet_private_key.get_secret_value()
     
     try:
         # Initialize Hyperliquid Exchange
@@ -233,7 +74,6 @@ def place_limit_order(
         
         # Handle market order case (IOC without price)
         if time_in_force == "Ioc" and not limit_price:
-            info = Info(constants.TESTNET_API_URL)
             mid_price = info.all_mids().get(symbol)
             if not mid_price:
                 return f"❌ Could not fetch market price for {symbol}"
@@ -309,11 +149,11 @@ def place_trigger_order(
     """
     config = ensure_config()
     configurable = config.get('configurable', {})
-    user_info: Optional[AgentKYA] = configurable.get('agent_kya', {}).get("Hyperliquid Trading Agent")
-    if not user_info:
+    agent_wallet: Optional[AgentKYA] = configurable.get('agent_kya', {}).get(AGENT_NAME)
+    if not agent_wallet:
         return "Error: User information for Hyperliquid Trading Agent not found in configuration."
     
-    wallet_private_key = user_info.wallet_private_key.get_secret_value()
+    wallet_private_key = agent_wallet.wallet_private_key.get_secret_value()
     
     try:
         # Initialize Hyperliquid Exchange
@@ -355,163 +195,6 @@ def place_trigger_order(
         logger.error(f"[HyperliquidAgent] Error placing {order_type_str}: {str(e)}", exc_info=True)
         return f"❌ Failed to set {order_type_str}: {str(e)}"
 
-
-@tool
-def close_trade(
-    symbol: str,
-    size: Optional[float] = None,
-    close_type: Literal["market", "limit"] = "market",
-    limit_price: Optional[float] = None,
-):
-    """
-    Close an existing position on Hyperliquid testnet.
-    
-    This tool closes open positions (not pending orders). To cancel pending orders, use cancel_order instead.
-    
-    Args:
-        symbol: Trading pair symbol (e.g., "BTC", "ETH", "SOL")
-        size: Position size to close. If None, closes entire position
-        close_type: "market" for immediate closure, "limit" for limit order closure
-        limit_price: Required if close_type is "limit". Price at which to close the position
-    
-    Returns:
-        str: Result message indicating success or rejection
-        
-    Examples:
-        - Close entire BTC position at market: close_trade("BTC")
-        - Close 0.5 ETH at market: close_trade("ETH", size=0.5)
-        - Close SOL position with limit: close_trade("SOL", close_type="limit", limit_price=105)
-    """
-    config = ensure_config()
-    configurable = config.get('configurable', {})
-    user_info: Optional[AgentKYA] = configurable.get('agent_kya', {}).get("Hyperliquid Trading Agent")
-    if not user_info:
-        return "Error: User information for Hyperliquid Trading Agent not found in configuration."
-    
-    wallet_private_key = user_info.wallet_private_key.get_secret_value()
-    
-    # Validate limit_price if close_type is limit
-    if close_type == "limit" and not limit_price:
-        return "Error: limit_price is required when close_type is 'limit'"
-    
-    # Construct message strings
-    size_str = f"{size} {symbol}" if size else f"entire {symbol} position"
-    price_str = f" at limit price ${limit_price}" if limit_price else " at market price"
-    
-    # Create user-friendly message
-    message = (
-        f"Close {size_str}{price_str}\n"
-        f"Platform: Hyperliquid Testnet\n\n"
-        f"Do you approve closing this position?"
-    )
-    
-    interrupt_obj = InterruptObject(
-        action_name="close_trade",
-        message=message,
-        requires_signature=False,
-    )
-    
-    # Request user approval with interrupt
-    response = interrupt(interrupt_obj.model_dump(exclude_none=True))
-    
-    if response.get("action") == Action.REJECTED.value:
-        return f"User rejected the close position request for {symbol}."
-    
-    if response.get("action") == Action.APPROVED.value:
-        try:
-            # Initialize Hyperliquid Exchange with private key (testnet)
-            exchange = Exchange(
-                wallet=None,
-                base_url=constants.TESTNET_API_URL,
-                account_address=None,
-            )
-            
-            # Set the wallet from private key
-            from eth_account import Account
-            account = Account.from_key(wallet_private_key)
-            exchange.wallet = account
-            exchange.account_address = account.address
-            
-            # Get current position to determine close direction
-            info = Info(constants.TESTNET_API_URL)
-            user_state = info.user_state(account.address)
-            
-            # Find the position for this symbol
-            position_info = None
-            for position in user_state.get("assetPositions", []):
-                if position.get("position", {}).get("coin") == symbol:
-                    position_info = position.get("position")
-                    break
-            
-            if not position_info:
-                return f"❌ No open position found for {symbol}"
-            
-            current_size = float(position_info.get("szi", 0))
-            if current_size == 0:
-                return f"❌ No open position found for {symbol}"
-            
-            # Determine close size and direction
-            close_size = abs(size) if size else abs(current_size)
-            is_closing_long = current_size > 0
-            is_buy_to_close = not is_closing_long  # Buy to close short, sell to close long
-            
-            # Execute close order
-            if close_type == "limit" and limit_price:
-                # Limit order to close with GTC
-                order_type = {"limit": {"tif": "Gtc"}}
-                order_result = exchange.order(
-                    symbol,
-                    is_buy_to_close,
-                    close_size,
-                    limit_price,
-                    order_type,
-                    reduce_only=True,
-                )
-            else:
-                # Market order to close - use limit with IOC
-                mid_price = info.all_mids().get(symbol)
-                if not mid_price:
-                    return f"Error: Could not fetch market price for {symbol}"
-                
-                # Convert to float as API returns string
-                mid_price = float(mid_price)
-                
-                # Use a price with slippage tolerance for market order
-                slippage_price = mid_price * 1.05 if is_buy_to_close else mid_price * 0.95
-                
-                # Round to 5 significant figures for price precision
-                from math import log10, floor
-                if slippage_price > 0:
-                    sig_figs = 5
-                    magnitude = floor(log10(abs(slippage_price)))
-                    slippage_price = round(slippage_price, sig_figs - int(magnitude) - 1)
-                
-                # Use IOC (Immediate or Cancel) for market-like behavior
-                order_type = {"limit": {"tif": "Ioc"}}
-                order_result = exchange.order(
-                    symbol,
-                    is_buy_to_close,
-                    close_size,
-                    slippage_price,
-                    order_type,
-                    reduce_only=True,
-                )
-            
-            # Return the raw order result
-            return str(order_result)
-                
-        except Exception as e:
-            logger.error(f"[HyperliquidAgent] Error closing position: {str(e)}", exc_info=True)
-            return f"❌ Error closing position: {str(e)}"
-    
-    if response.get("action") == Action.EDITED.value:
-        edited_size = response.get("size")
-        edited_limit_price = response.get("limit_price")
-        return f"User edited the close order. New size: {edited_size}, New limit price: {edited_limit_price}. Please resubmit with updated parameters."
-    
-    return f"Unexpected response action: {response.get('action')}"
-
-
 @tool
 def cancel_order(
     symbol: str,
@@ -536,11 +219,11 @@ def cancel_order(
     """
     config = ensure_config()
     configurable = config.get('configurable', {})
-    user_info: Optional[AgentKYA] = configurable.get('agent_kya', {}).get("Hyperliquid Trading Agent")
-    if not user_info:
+    agent_wallet: Optional[AgentKYA] = configurable.get('agent_kya', {}).get(AGENT_NAME)
+    if not agent_wallet:
         return "Error: User information for Hyperliquid Trading Agent not found in configuration."
     
-    wallet_private_key = user_info.wallet_private_key.get_secret_value()
+    wallet_private_key = agent_wallet.wallet_private_key.get_secret_value()
     
     try:
         # Initialize Hyperliquid Exchange
@@ -563,3 +246,457 @@ def cancel_order(
     except Exception as e:
         logger.error(f"[HyperliquidAgent] Error canceling order: {str(e)}", exc_info=True)
         return f"❌ Failed to cancel order: {str(e)}"
+
+
+@tool
+def get_user_state(
+    symbol: Optional[str] = None,
+):
+    """
+    Get user account state and positions on Hyperliquid testnet.
+    
+    Retrieves account information including margin, equity, and open positions.
+    Can filter to show only a specific symbol's position.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTC", "ETH", "SOL"). 
+                If None, returns all positions and full account info.
+                If provided, returns only that symbol's position.
+    
+    Returns:
+        str: Account state information including positions, margin, and equity
+        
+    Examples:
+        - Get all positions: get_user_state()
+        - Get BTC position only: get_user_state("BTC")
+    """
+    config = ensure_config()
+    configurable = config.get('configurable', {})
+    # Get user main wallet address from configuration
+    user_wallet_address = configurable.get('user_wallet_address')
+    if not user_wallet_address:
+        return "Error: User information for Hyperliquid Trading Agent not found in configuration."
+    
+    try:
+        user_state = info.user_state(user_wallet_address)
+        
+        if symbol:
+            # Filter for specific symbol
+            positions = user_state.get("assetPositions", [])
+            filtered_position = None
+            for position in positions:
+                if position.get("position", {}).get("coin") == symbol:
+                    filtered_position = position.get("position")
+                    break
+            
+            if not filtered_position:
+                return f"📊 No open position found for {symbol}"
+            
+            # Format position info
+            size = float(filtered_position.get("szi", 0))
+            entry_price = filtered_position.get("entryPx", "N/A")
+            unrealized_pnl = filtered_position.get("unrealizedPnl", "N/A")
+            leverage = filtered_position.get("leverage", {})
+            
+            position_type = "Long" if size > 0 else "Short"
+            
+            return (
+                f"📊 {symbol} Position:\n"
+                f"  Type: {position_type}\n"
+                f"  Size: {abs(size)}\n"
+                f"  Entry Price: ${entry_price}\n"
+                f"  Unrealized PnL: ${unrealized_pnl}\n"
+                f"  Leverage: {leverage}"
+            )
+        else:
+            # Return full account state
+            margin_summary = user_state.get("marginSummary", {})
+            account_value = margin_summary.get("accountValue", "N/A")
+            total_margin_used = margin_summary.get("totalMarginUsed", "N/A")
+            total_ntl_pos = margin_summary.get("totalNtlPos", "N/A")
+            
+            positions = user_state.get("assetPositions", [])
+            active_positions = [p for p in positions if float(p.get("position", {}).get("szi", 0)) != 0]
+            
+            result = (
+                f"📊 Account Overview:\n"
+                f"  Account Value: ${account_value}\n"
+                f"  Total Margin Used: ${total_margin_used}\n"
+                f"  Total Notional Position: ${total_ntl_pos}\n\n"
+            )
+            
+            if active_positions:
+                result += f"📈 Open Positions ({len(active_positions)}):\n"
+                for pos in active_positions:
+                    p = pos.get("position", {})
+                    coin = p.get("coin", "Unknown")
+                    size = float(p.get("szi", 0))
+                    entry_px = p.get("entryPx", "N/A")
+                    unrealized_pnl = p.get("unrealizedPnl", "N/A")
+                    pos_type = "Long" if size > 0 else "Short"
+                    result += f"  • {coin}: {pos_type} {abs(size)} @ ${entry_px} (PnL: ${unrealized_pnl})\n"
+            else:
+                result += "📈 No open positions"
+            
+            return result
+        
+    except Exception as e:
+        logger.error(f"[HyperliquidAgent] Error getting user state: {str(e)}", exc_info=True)
+        return f"❌ Error getting user state: {str(e)}"
+
+
+@tool
+def get_open_orders(
+    symbol: Optional[str] = None,
+):
+    """
+    Get open (pending) orders on Hyperliquid testnet.
+    
+    Retrieves all unfilled orders including limit orders and trigger orders (TP/SL).
+    Can filter to show only orders for a specific symbol.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTC", "ETH", "SOL").
+                If None, returns all pending orders.
+                If provided, returns only orders for that symbol.
+    
+    Returns:
+        str: List of open orders with details
+        
+    Examples:
+        - Get all open orders: get_open_orders()
+        - Get BTC orders only: get_open_orders("BTC")
+    """
+    config = ensure_config()
+    configurable = config.get('configurable', {})
+    user_wallet_address = configurable.get('user_wallet_address')
+    if not user_wallet_address:
+        return "Error: User information for Hyperliquid Trading Agent not found in configuration."
+    
+    try:
+        open_orders = info.open_orders(user_wallet_address)
+        
+        if symbol:
+            # Filter for specific symbol
+            open_orders = [o for o in open_orders if o.get("coin") == symbol]
+        
+        if not open_orders:
+            filter_msg = f" for {symbol}" if symbol else ""
+            return f"📋 No open orders{filter_msg}"
+        
+        result = f"📋 Open Orders ({len(open_orders)}):\n"
+        for order in open_orders:
+            coin = order.get("coin", "Unknown")
+            oid = order.get("oid", "N/A")
+            side = "Buy" if order.get("side") == "B" else "Sell"
+            size = order.get("sz", "N/A")
+            limit_px = order.get("limitPx", "N/A")
+            order_type = order.get("orderType", "Limit")
+            
+            result += (
+                f"  • [{oid}] {coin}: {side} {size} @ ${limit_px} ({order_type})\n"
+            )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"[HyperliquidAgent] Error getting open orders: {str(e)}", exc_info=True)
+        return f"❌ Error getting open orders: {str(e)}"
+
+
+@tool
+def get_market_data(
+    symbol: str,
+):
+    """
+    Get current market data for a trading pair on Hyperliquid.
+    
+    Retrieves real-time market information including mid price, mark price,
+    funding rate, and 24h volume.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTC", "ETH", "SOL")
+    
+    Returns:
+        str: Market data including price, funding rate, and volume
+        
+    Examples:
+        - Get BTC market data: get_market_data("BTC")
+        - Get ETH market data: get_market_data("ETH")
+    """
+    try:
+        # Get mid price
+        all_mids = info.all_mids()
+        mid_price = all_mids.get(symbol)
+        
+        if not mid_price:
+            return f"❌ Symbol {symbol} not found"
+        
+        # Get metadata for more details
+        meta = info.meta()
+        universe = meta.get("universe", [])
+        
+        asset_info = None
+        for asset in universe:
+            if asset.get("name") == symbol:
+                asset_info = asset
+                break
+        
+        # Get funding rate from user state context (publicly available)
+        ctx = info.meta_and_asset_ctxs()
+        asset_ctxs = ctx[1] if len(ctx) > 1 else []
+        
+        funding_rate = "N/A"
+        mark_price = "N/A"
+        open_interest = "N/A"
+        volume_24h = "N/A"
+        
+        # Find the asset context for this symbol
+        for i, asset in enumerate(universe):
+            if asset.get("name") == symbol and i < len(asset_ctxs):
+                asset_ctx = asset_ctxs[i]
+                funding_rate = asset_ctx.get("funding", "N/A")
+                mark_price = asset_ctx.get("markPx", "N/A")
+                open_interest = asset_ctx.get("openInterest", "N/A")
+                volume_24h = asset_ctx.get("dayNtlVlm", "N/A")
+                break
+        
+        # Format funding rate as percentage
+        if funding_rate != "N/A":
+            funding_pct = float(funding_rate) * 100
+            funding_display = f"{funding_pct:.4f}%"
+        else:
+            funding_display = "N/A"
+        
+        # Format volume
+        if volume_24h != "N/A":
+            vol = float(volume_24h)
+            if vol >= 1_000_000_000:
+                volume_display = f"${vol/1_000_000_000:.2f}B"
+            elif vol >= 1_000_000:
+                volume_display = f"${vol/1_000_000:.2f}M"
+            else:
+                volume_display = f"${vol:,.0f}"
+        else:
+            volume_display = "N/A"
+        
+        result = (
+            f"📈 {symbol} Market Data:\n"
+            f"  Mid Price: ${mid_price}\n"
+            f"  Mark Price: ${mark_price}\n"
+            f"  Funding Rate: {funding_display}\n"
+            f"  Open Interest: ${open_interest}\n"
+            f"  24h Volume: {volume_display}\n"
+        )
+        
+        if asset_info:
+            max_leverage = asset_info.get("maxLeverage", "N/A")
+            result += f"  Max Leverage: {max_leverage}x\n"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"[HyperliquidAgent] Error getting market data: {str(e)}", exc_info=True)
+        return f"❌ Error getting market data: {str(e)}"
+
+
+@tool
+def cancel_all_orders(
+    symbol: Optional[str] = None,
+):
+    """
+    Cancel all open orders on Hyperliquid testnet.
+    
+    Cancels all pending orders for a specific symbol or all symbols if not specified.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTC", "ETH", "SOL").
+                If None, cancels all orders across all symbols.
+    
+    Returns:
+        str: Result message indicating success or failure
+        
+    Examples:
+        - Cancel all BTC orders: cancel_all_orders("BTC")
+        - Cancel all orders: cancel_all_orders()
+    """
+    config = ensure_config()
+    configurable = config.get('configurable', {})
+    agent_wallet: Optional[AgentKYA] = configurable.get('agent_kya', {}).get(AGENT_NAME)
+    if not agent_wallet:
+        return "Error: User information for Hyperliquid Trading Agent not found in configuration."
+    
+    wallet_private_key = agent_wallet.wallet_private_key.get_secret_value()
+    
+    try:
+        from eth_account import Account
+        account = Account.from_key(wallet_private_key)
+        
+        # Initialize Hyperliquid Exchange
+        exchange = Exchange(
+            wallet=None,
+            base_url=constants.TESTNET_API_URL,
+            account_address=None,
+        )
+        exchange.wallet = account
+        exchange.account_address = account.address
+        
+        # Get all open orders
+        open_orders = info.open_orders(account.address)
+        
+        if symbol:
+            # Filter for specific symbol
+            open_orders = [o for o in open_orders if o.get("coin") == symbol]
+        
+        if not open_orders:
+            filter_msg = f" for {symbol}" if symbol else ""
+            return f"📋 No open orders{filter_msg} to cancel"
+        
+        # Cancel each order
+        cancelled_count = 0
+        failed_count = 0
+        
+        for order in open_orders:
+            coin = order.get("coin")
+            oid = order.get("oid")
+            try:
+                exchange.cancel(coin, oid)
+                cancelled_count += 1
+            except Exception as e:
+                logger.error(f"[HyperliquidAgent] Failed to cancel order {oid}: {str(e)}")
+                failed_count += 1
+        
+        filter_msg = f" for {symbol}" if symbol else ""
+        result = f"✅ Cancelled {cancelled_count} order(s){filter_msg}"
+        if failed_count > 0:
+            result += f"\n⚠️ Failed to cancel {failed_count} order(s)"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"[HyperliquidAgent] Error canceling all orders: {str(e)}", exc_info=True)
+        return f"❌ Error canceling orders: {str(e)}"
+
+
+@tool
+def get_candles(
+    symbol: str,
+    timeframe: str = "1d",
+    limit: int = 100,
+):
+    """
+    Get historical candlestick (OHLCV) data for a trading pair on Hyperliquid.
+    
+    Retrieves historical price data in candlestick format for technical analysis.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., "BTC", "ETH", "SOL")
+        timeframe: Candle interval. Options: "1m", "5m", "15m", "1h", "4h", "1d"
+        limit: Number of candles to retrieve (default: 100, max: 5000)
+    
+    Returns:
+        str: Candlestick data with OHLCV values
+        
+    Examples:
+        - Get daily BTC candles: get_candles("BTC")
+        - Get hourly ETH candles: get_candles("ETH", "1h", 50)
+        - Get 15min SOL candles: get_candles("SOL", "15m", 200)
+    """
+    try:
+        # Map timeframe to interval in seconds for time calculation
+        timeframe_seconds = {
+            "1m": 60,
+            "5m": 300,
+            "15m": 900,
+            "1h": 3600,
+            "4h": 14400,
+            "1d": 86400,
+        }
+        
+        interval_secs = timeframe_seconds.get(timeframe)
+        if not interval_secs:
+            return f"❌ Invalid timeframe '{timeframe}'. Valid options: 1m, 5m, 15m, 1h, 4h, 1d"
+        
+        # Limit the number of candles
+        limit = min(limit, 5000)
+        
+        # Calculate start time based on limit and interval
+        import time
+        end_time = int(time.time() * 1000)  # Current time in milliseconds
+        start_time = end_time - (limit * interval_secs * 1000)
+        
+        # Fetch candles from Hyperliquid - interval should be string like "1h", "1d"
+        candles = info.candles_snapshot(symbol, timeframe, start_time, end_time)
+        
+        if not candles:
+            return f"❌ No candle data found for {symbol}"
+        
+        # Format the response - show summary and recent candles
+        total_candles = len(candles)
+        
+        # Calculate basic stats from candles
+        closes = [float(c.get("c", 0)) for c in candles]
+        highs = [float(c.get("h", 0)) for c in candles]
+        lows = [float(c.get("l", 0)) for c in candles]
+        volumes = [float(c.get("v", 0)) for c in candles]
+        
+        if closes:
+            current_price = closes[-1]
+            period_high = max(highs)
+            period_low = min(lows)
+            total_volume = sum(volumes)
+            price_change = ((closes[-1] - closes[0]) / closes[0] * 100) if closes[0] > 0 else 0
+        else:
+            return f"❌ No valid candle data for {symbol}"
+        
+        # Format volume
+        if total_volume >= 1_000_000_000:
+            volume_display = f"${total_volume/1_000_000_000:.2f}B"
+        elif total_volume >= 1_000_000:
+            volume_display = f"${total_volume/1_000_000:.2f}M"
+        else:
+            volume_display = f"${total_volume:,.0f}"
+        
+        result = (
+            f"📊 {symbol} Candles ({timeframe}, {total_candles} periods):\n\n"
+            f"  Current Price: ${current_price:,.2f}\n"
+            f"  Period High: ${period_high:,.2f}\n"
+            f"  Period Low: ${period_low:,.2f}\n"
+            f"  Price Change: {price_change:+.2f}%\n"
+            f"  Total Volume: {volume_display}\n\n"
+        )
+        
+        # Show last 5 candles
+        result += "📈 Recent Candles (O/H/L/C/V):\n"
+        recent_candles = candles[-5:] if len(candles) >= 5 else candles
+        
+        for candle in reversed(recent_candles):
+            from datetime import datetime
+            ts = candle.get("t", 0)
+            dt = datetime.fromtimestamp(ts / 1000).strftime("%Y-%m-%d %H:%M")
+            o = float(candle.get("o", 0))
+            h = float(candle.get("h", 0))
+            l = float(candle.get("l", 0))
+            c = float(candle.get("c", 0))
+            v = float(candle.get("v", 0))
+            
+            change = "🟢" if c >= o else "🔴"
+            result += f"  {change} {dt}: ${o:,.2f} / ${h:,.2f} / ${l:,.2f} / ${c:,.2f} (Vol: {v:,.2f})\n"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"[HyperliquidAgent] Error getting candles: {str(e)}", exc_info=True)
+        return f"❌ Error getting candles: {str(e)}"
+
+
+tools = [
+    place_limit_order,
+    place_trigger_order,
+    cancel_order,
+    get_user_state,
+    get_open_orders,
+    get_market_data,
+    cancel_all_orders,
+    get_candles,
+]

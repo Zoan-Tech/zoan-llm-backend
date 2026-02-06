@@ -32,6 +32,12 @@ class AgentMentionEvent(BaseModel):
         ...,
         description="User who created the content"
     )
+    
+    user_wallet_address: Optional[str] = Field(
+        None,
+        description="Wallet address of the user"
+    )
+    
     agent_configs: list[AgentConfig] = Field(
         ...,
         description="Configuration of the mentioned agent"

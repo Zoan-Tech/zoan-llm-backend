@@ -6,11 +6,7 @@ from langchain.agents import create_agent
 
 from config.logging import get_logger
 from internal.agent.base import BaseInternalAgent
-from internal.agent.tools.hyperliquid_trading_agent import (
-    place_limit_order,
-    place_trigger_order,
-    cancel_order,
-)
+from internal.agent.tools.hyperliquid_trading_agent import tools
 from internal.agent.middleware.base import get_base_middleware
 from model.completion import AgentConfig
 
@@ -43,12 +39,7 @@ class HyperliquidTradingAgent(BaseInternalAgent):
         Returns:
             List of trading tools for position management
         """
-        base_tools = [
-            place_limit_order,
-            place_trigger_order,
-            cancel_order,
-        ]
-        return base_tools + self.handoff_tools
+        return tools + self.handoff_tools
     
     def get_middleware(self) -> list:
         """
