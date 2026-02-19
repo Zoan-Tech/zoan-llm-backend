@@ -17,10 +17,10 @@ def get_base_middleware(
         #         'messages', messages_to_keep
         #     )
         # ),
-        ModelFallbackMiddleware(
-            'openai:gpt-5.2-mini',
-            'openai:gpt-5.1-mini'
-        )
+        # ModelFallbackMiddleware(
+        #     'openai:gpt-5.2-mini',
+        #     'openai:gpt-5.1-mini'
+        # )
     ]
     
     return base_middleware

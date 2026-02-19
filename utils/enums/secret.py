@@ -60,3 +60,6 @@ class SecretEnum(Enum):
     MAX_WORKERS = "MAX_WORKERS"
     GRPC_PORT = "GRPC_PORT"
     LOG_LEVEL = "LOG_LEVEL"
+    
+    # 0x API Key
+    ZERO_X_API_KEY = "ZERO_X_API_KEY"
