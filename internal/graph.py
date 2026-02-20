@@ -17,6 +17,7 @@ from internal.agent import (
     aster_trading_agent,
     hyperliquid_trading_agent,
     coingecko_agent,
+    wallet_agent,
 )
 from internal.builder.agent import AgentBuilder
 from internal.builder.module.client import ModuleClient, module_client
@@ -35,6 +36,7 @@ INTERNAL_AGENT: Dict[str, BaseInternalAgent] = {
     aster_trading_agent.SANITIZED_NAME: aster_trading_agent,
     hyperliquid_trading_agent.SANITIZED_NAME: hyperliquid_trading_agent,
     coingecko_agent.SANITIZED_NAME: coingecko_agent,
+    wallet_agent.SANITIZED_NAME: wallet_agent,
 }
 
 # Default cache configuration

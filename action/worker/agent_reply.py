@@ -101,6 +101,7 @@ class AgentReplyWorker(BaseWorker):
                         # Invoke agent completion
                         reply_content = await swarm_completion.create_agent_completion(
                             user_id=agent_mention_event.user_id,
+                            user_wallet_address=agent_mention_event.user_wallet_address,
                             conversation_id=agent_mention_event.post_id,  # Use post_id as conversation_id
                             message=agent_mention_event.content,
                             agent_config=agent_config,

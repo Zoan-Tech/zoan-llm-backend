@@ -3136,6 +3136,27 @@ wheels = [
 ]
 
 [[package]]
+name = "privy-client"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "cryptography" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pyhpke" },
+    { name = "pyjwt" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+    { name = "web3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2e/26/a959c126d2006ef97d6daa6ab264bcf21bd9750591581adffdd769c80468/privy_client-0.5.0.tar.gz", hash = "sha256:2497a4248beb2b3a45074b5f01b9541cfbbe88e331ccd468b705e1831edf0c78", size = 140042, upload-time = "2025-06-02T22:04:53.581Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/cf/14aa3f4ed2270757feb1d4373a59e1ead8c745ab17f1ed12b883fe6e90b1/privy_client-0.5.0-py3-none-any.whl", hash = "sha256:6437210a61a029509611cb783affe0c7899df0b43bf13aecf2e1480bfb450f7f", size = 143149, upload-time = "2025-06-02T22:04:51.925Z" },
+]
+
+[[package]]
 name = "propcache"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3595,6 +3616,27 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b0/77/a5b8c569bf593b0140bde72ea885a803b82086995367bf2037de0159d924/pygments-2.19.2.tar.gz", hash = "sha256:636cb2477cec7f8952536970bc533bc43743542f70392ae026374600add5b887", size = 4968631, upload-time = "2025-06-21T13:39:12.283Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/21/705964c7812476f378728bdf590ca4b771ec72385c533964653c68e86bdc/pygments-2.19.2-py3-none-any.whl", hash = "sha256:86540386c03d588bb81d44bc3928634ff26449851e99741617ecb9037ee5ec0b", size = 1225217, upload-time = "2025-06-21T13:39:07.939Z" },
+]
+
+[[package]]
+name = "pyhpke"
+version = "0.6.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/37/1acb2cee5afd3dcf45b425b0d984a9cba8917fd935106ef278b42062ecfa/pyhpke-0.6.4.tar.gz", hash = "sha256:1402c6c41a0605941d2d2a589774d346c0e7a0dc7f745e84c6f0a06c2fd335c9", size = 1638147, upload-time = "2025-12-21T10:38:07.556Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/f6/ff7df9e21b38ec1c827efd90c28b3bc76eddbfdf5a44aaf2fadb59a17cb9/pyhpke-0.6.4-py3-none-any.whl", hash = "sha256:abd0b2fec1424858399ffbed0d236fb7e9740dece9907f59ca40bd567d7fef78", size = 23792, upload-time = "2025-12-21T10:38:06.172Z" },
+]
+
+[[package]]
+name = "pyjwt"
+version = "2.11.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/5a/b46fa56bf322901eee5b0454a34343cdbdae202cd421775a8ee4e42fd519/pyjwt-2.11.0.tar.gz", hash = "sha256:35f95c1f0fbe5d5ba6e43f00271c275f7a1a4db1dab27bf708073b75318ea623", size = 98019, upload-time = "2026-01-30T19:59:55.694Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/01/c26ce75ba460d5cd503da9e13b21a33804d38c2165dec7b716d06b13010c/pyjwt-2.11.0-py3-none-any.whl", hash = "sha256:94a6bde30eb5c8e04fee991062b534071fd1439ef58d2adc9ccb823e7bcd0469", size = 28224, upload-time = "2026-01-30T19:59:54.539Z" },
 ]
 
 [[package]]
@@ -5260,6 +5302,7 @@ dependencies = [
     { name = "langgraph-supervisor" },
     { name = "langgraph-swarm" },
     { name = "minio" },
+    { name = "privy-client" },
     { name = "psycopg-binary" },
     { name = "psycopg2-binary" },
     { name = "qdrant-client" },
@@ -5294,6 +5337,7 @@ requires-dist = [
     { name = "langgraph-supervisor", specifier = "==0.0.31" },
     { name = "langgraph-swarm", specifier = "==0.1.0" },
     { name = "minio", specifier = "==7.2.20" },
+    { name = "privy-client", specifier = ">=0.5.0" },
     { name = "psycopg-binary", specifier = "==3.3.2" },
     { name = "psycopg2-binary", specifier = "==2.9.10" },
     { name = "qdrant-client", specifier = "==1.16.2" },

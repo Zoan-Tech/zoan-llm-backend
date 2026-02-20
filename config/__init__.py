@@ -83,3 +83,6 @@ class Config:
     MAX_WORKERS: int = int(os.environ.get(SecretEnum.MAX_WORKERS.value, 10))
     GRPC_PORT: int = int(os.environ.get(SecretEnum.GRPC_PORT.value, 50051))    
     LOG_LEVEL: str = os.environ.get(SecretEnum.LOG_LEVEL.value, Defaults.LOG_LEVEL)
+    
+    # 0x API Key
+    ZERO_X_API_KEY: Optional[str] = os.environ.get(SecretEnum.ZERO_X_API_KEY.value)

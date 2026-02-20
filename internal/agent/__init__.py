@@ -14,6 +14,7 @@ from internal.agent.game_generator import game_generator_v1
 from internal.agent.aster_trading_agent import aster_trading_agent
 from internal.agent.hyperliquid_trading_agent import hyperliquid_trading_agent
 from internal.agent.coingecko_agent import coingecko_agent
+from internal.agent.wallet_agent import wallet_agent
 
 __all__ = [
     "primary_agent",
@@ -21,5 +22,6 @@ __all__ = [
     "aster_trading_agent",
     "hyperliquid_trading_agent",
     "coingecko_agent",
+    "wallet_agent",
     "BaseInternalAgent",
 ]

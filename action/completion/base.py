@@ -439,7 +439,8 @@ class BaseCompletionAction:
 
     def _create_graph_config(
         self, 
-        user_id: str, 
+        user_id: str,
+        user_wallet_address: Optional[str],
         conversation_id: str, 
         auth_token: str = "",
         agent_kyas: Optional[Dict[str, Any]] = None,
@@ -459,6 +460,7 @@ class BaseCompletionAction:
         config = {
             "configurable": {
                 "user_id": user_id,
+                "user_wallet_address": user_wallet_address,
                 "thread_id": conversation_id,
                 "auth_token": auth_token,
             },

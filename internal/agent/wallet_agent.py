@@ -1,43 +1,38 @@
 """
-Hyperliquid Trading Agent - Handles perpetual futures trading on Hyperliquid testnet.
-Supports market and limit orders for opening and closing positions.
+Wallet Agent - Handles token swaps and cross-chain bridging.
+Supports multiple EVM chains with DEX swap and bridge functionality.
 """
 from langchain.agents import create_agent
 
 from config.logging import get_logger
 from internal.agent.base import BaseInternalAgent
-from internal.agent.tools.hyperliquid_trading_agent import tools
+from internal.agent.tools.wallet_agent import tools
 from internal.agent.middleware.base import get_base_middleware
 from model.completion import AgentConfig
 
 logger = get_logger()
 
 
-class HyperliquidTradingAgent(BaseInternalAgent):
+class WalletAgent(BaseInternalAgent):
     """
-    Hyperliquid Trading Agent for managing perpetual futures positions on testnet.
+    Wallet Agent for managing token swaps and cross-chain bridging.
     
     This agent specializes in:
-    - Opening long/short positions with market or limit orders
-    - Closing positions (full or partial)
-    - Managing risk with stop loss and take profit orders
-    - Trading on Hyperliquid testnet environment
+    - Swapping tokens on DEXs (Uniswap V2-compatible routers)
+    - Bridging assets across EVM-compatible chains
+    - Supporting multiple chains: Ethereum, Arbitrum, BSC, Polygon, Base, Optimism, Avalanche
     
-    Supported operations:
-    - Market orders for immediate execution
-    - Limit orders for specific price targets
-    - Stop loss and take profit management
-    - Partial and full position closure
+    All transactions require user signature via interrupt flow.
     """
-    SANITIZED_NAME = "hyperliquid_trading_agent"
-    PROMPT_NAME = "hyperliquid_trading_agent_v1"
+    SANITIZED_NAME = "wallet_agent"
+    PROMPT_NAME = "wallet_agent_v1"
     
     def get_toolset(self) -> list:
         """
-        Get the tools available for Hyperliquid trading.
+        Get the tools available for wallet operations.
         
         Returns:
-            List of trading tools for position management
+            List of wallet tools including swap and bridge
         """
         return tools + self.handoff_tools
     
@@ -53,14 +48,14 @@ class HyperliquidTradingAgent(BaseInternalAgent):
     
     def get_agent(self, agent_config: AgentConfig, **kwargs):
         """
-        Create the Hyperliquid Trading Agent with LLM and tools.
+        Create the Wallet Agent with LLM and tools.
         
         Args:
             agent_config: Configuration for the agent including model settings
             **kwargs: Additional arguments
         
         Returns:
-            Configured agent ready for trading operations
+            Configured agent ready for wallet operations
         """
         self._prepare_handoff_tools(handoff_instructions=kwargs.get("handoff_instructions", {}))
             
@@ -84,4 +79,4 @@ class HyperliquidTradingAgent(BaseInternalAgent):
 
 
 # Export singleton instance
-hyperliquid_trading_agent = HyperliquidTradingAgent()
+wallet_agent = WalletAgent()
