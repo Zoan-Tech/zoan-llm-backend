@@ -63,3 +63,6 @@ class SecretEnum(Enum):
     
     # 0x API Key
     ZERO_X_API_KEY = "ZERO_X_API_KEY"
+    
+    # Privy Signer Key
+    PRIVY_SIGNER_KEY = "PRIVY_SIGNER_KEY"

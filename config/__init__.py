@@ -86,3 +86,6 @@ class Config:
     
     # 0x API Key
     ZERO_X_API_KEY: Optional[str] = os.environ.get(SecretEnum.ZERO_X_API_KEY.value)
+    
+    # Privy Signer Key
+    PRIVY_SIGNER_KEY: Optional[str] = os.environ.get(SecretEnum.PRIVY_SIGNER_KEY.value)

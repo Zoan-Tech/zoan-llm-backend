@@ -5,7 +5,9 @@ from config import Config
 from langchain_core.runnables.config import ensure_config
 
 # Initialize once
-client = PrivyAPI()
+client = PrivyAPI(
+    authorization_key=Config.PRIVY_SIGNER_KEY
+)
 
 CHAINS_CONFIG = {
     "ethereum": {
@@ -145,27 +147,141 @@ def _privy_send_tx(
     caip2: str,
     to: str,
     data: str = None,
-    value: int = 0,
+    value: str = "0x0",
 ) -> dict:
-    """Send transaction via Privy Python SDK."""
+    """Send transaction using pre-created dashboard signer."""
     transaction = {"to": to, "value": value}
     if data:
         transaction["data"] = data
 
+    # Privy SDK handles authorization with server-side signer
     tx = client.wallets.rpc(
         wallet_id=wallet_id,
         method="eth_sendTransaction",
         caip2=caip2,
-        params={
-            "transaction": transaction,
-        },
+        params={"transaction": transaction},
     )
+    
     return {"hash": tx.data.hash, "caip2": tx.data.caip2}
+
+#### SWAP HELPER FUNCTIONS ####
 
 def build_egas_swap_calldata():
     # TODO: Implement calldata builder for EGAS router on ENI
     pass
 
+
+def _get_0x_quote(config: dict, token_in: str, token_out: str, amount: str, taker_address: str) -> dict:
+    """Fetch a swap quote from the 0x API v2."""
+    endpoint = ZERO_X_ENDPOINTS[config["chain_id"]]
+    params = {
+        "chainId": str(config["chain_id"]),
+        "sellToken": token_in,
+        "buyToken": token_out,
+        "sellAmount": amount,
+        "taker": taker_address,
+    }
+
+    headers = {"0x-version": "v2"}
+    if Config.ZERO_X_API_KEY:
+        headers["0x-api-key"] = Config.ZERO_X_API_KEY
+
+    response = httpx.get(
+        f"{endpoint}/swap/allowance-holder/quote",
+        params=params,
+        headers=headers,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _encode_erc20_approve(spender: str, amount: int) -> str:
+    """Encode ERC-20 approve(spender, amount) calldata."""
+    selector = "095ea7b3"
+    spender_padded = spender[2:].lower().zfill(64)
+    amount_padded = hex(amount)[2:].zfill(64)
+    return f"0x{selector}{spender_padded}{amount_padded}"
+
+
+def _swap_via_0x(
+    wallet_id,
+    config,
+    token_in,
+    token_out,
+    amount,
+    taker_address: str,
+):
+    """Get quote from 0x API v2, then send tx via Privy."""
+    quote = _get_0x_quote(config, token_in, token_out, amount, taker_address)
+
+    approval_tx = None
+    
+    # Handle allowance approval if needed
+    allowance_issue = (quote.get("issues") or {}).get("allowance")
+    if allowance_issue:
+        spender = allowance_issue["spender"]
+        sell_amount = int(quote["sellAmount"])
+        approve_data = _encode_erc20_approve(spender, sell_amount)
+        
+        # ✅ Send approval tx
+        approval_tx = _privy_send_tx(
+            wallet_id=wallet_id,
+            caip2=config["caip2"],
+            to=token_in,
+            data=approve_data,
+            value="0x0",
+        )
+        
+        # ⚠️ Don't return here! Continue to swap
+
+    # ✅ Execute swap transaction
+    tx = quote["transaction"]
+    value = tx.get("value", "0")
+    if not value.startswith("0x"):
+        value = hex(int(value)) if value != "0" else "0x0"
+
+    swap_tx = _privy_send_tx(
+        wallet_id=wallet_id,
+        caip2=config["caip2"],
+        to=tx["to"],
+        data=tx["data"],
+        value=value,
+    )
+    
+    # ✅ Return both transactions
+    result = {
+        "status": "swap_executed",
+        "swap_tx": swap_tx,
+    }
+    
+    if approval_tx:
+        result["approval_tx"] = approval_tx
+        result["message"] = f"Approval tx: {approval_tx['hash']}, Swap tx: {swap_tx['hash']}"
+    else:
+        result["message"] = f"Swap tx: {swap_tx['hash']}"
+    
+    return result
+
+
+def _swap_via_router(
+    wallet_id,
+    config,
+    token_in,
+    token_out,
+    amount,
+):
+    """Build calldata for EGAS Swap router on ENI."""
+    calldata = build_egas_swap_calldata(token_in, token_out, amount)
+
+    return _privy_send_tx(
+        wallet_id=wallet_id,
+        caip2=config["caip2"],
+        to=config["swap_router"],
+        data=calldata,
+    )
+
+
+#### BRIDGE HELPER FUNCTIONS ####
 
 def _get_orbiter_quote(
     source_chain_id: int,
@@ -226,66 +342,6 @@ def _bridge_via_orbiter(
         value=int(tx_data.get("value", "0")),
     )
 
-def _get_0x_quote(config: dict, token_in: str, token_out: str, amount: str, taker_address: str) -> dict:
-    """Fetch a swap quote from the 0x API v2."""
-    endpoint = ZERO_X_ENDPOINTS[config["chain_id"]]
-    params = {
-        "chainId": str(config["chain_id"]),
-        "sellToken": token_in,
-        "buyToken": token_out,
-        "sellAmount": amount,
-        "taker": taker_address,
-    }
-
-    headers = {"0x-version": "v2"}
-    if Config.ZERO_X_API_KEY:
-        headers["0x-api-key"] = Config.ZERO_X_API_KEY
-
-    response = httpx.get(
-        f"{endpoint}/swap/allowance-holder/quote",
-        params=params,
-        headers=headers,
-    )
-    response.raise_for_status()
-    return response.json()
-
-
-def _swap_via_0x(
-    wallet_id,
-    config,
-    token_in,
-    token_out,
-    amount,
-    taker_address: str,
-):
-    """Get quote from 0x API v2, then send tx via Privy."""
-    quote = _get_0x_quote(config, token_in, token_out, amount, taker_address)
-
-    return _privy_send_tx(
-        wallet_id=wallet_id,
-        caip2=config["caip2"],
-        to=quote["to"],
-        data=quote["data"],
-        value=quote.get("value", "0"),
-    )
-
-
-def _swap_via_router(
-    wallet_id,
-    config,
-    token_in,
-    token_out,
-    amount,
-):
-    """Build calldata for EGAS Swap router on ENI."""
-    calldata = build_egas_swap_calldata(token_in, token_out, amount)
-
-    return _privy_send_tx(
-        wallet_id=wallet_id,
-        caip2=config["caip2"],
-        to=config["swap_router"],
-        data=calldata,
-    )
 
 @tool
 def review_swap(
