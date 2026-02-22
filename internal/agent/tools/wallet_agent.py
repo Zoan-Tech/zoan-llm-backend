@@ -2,6 +2,7 @@ import httpx
 from langchain_core.tools import tool
 from privy import PrivyAPI
 from config import Config
+from langchain_core.runnables.config import ensure_config
 
 # Initialize once
 client = PrivyAPI()
@@ -136,8 +137,16 @@ TOKEN_DECIMALS = {
     "USDC": 6, "USDT": 6,
 }
 
+ORBITER_API_BASE = "https://api.orbiter.finance"
 
-def _privy_send_tx(wallet_id: str, caip2: str, to: str, data: str = None, value: int = 0) -> dict:
+
+def _privy_send_tx(
+    wallet_id: str,
+    caip2: str,
+    to: str,
+    data: str = None,
+    value: int = 0,
+) -> dict:
     """Send transaction via Privy Python SDK."""
     transaction = {"to": to, "value": value}
     if data:
@@ -157,27 +166,99 @@ def build_egas_swap_calldata():
     # TODO: Implement calldata builder for EGAS router on ENI
     pass
 
-def _get_0x_quote(config: dict, token_in: str, token_out: str, amount: str, taker_address: str | None = None) -> dict:
-    """Fetch a swap quote from the 0x API."""
-    endpoint = ZERO_X_ENDPOINTS[config["chain_id"]]
-    params = {
-        "sellToken": token_in.lower(),
-        "buyToken": token_out.lower(),
-        "sellAmount": amount,
+
+def _get_orbiter_quote(
+    source_chain_id: int,
+    dest_chain_id: int,
+    token_address: str,
+    amount: str,
+    user_address: str,
+) -> dict:
+    """Get a bridge quote from Orbiter Finance API."""
+    payload = {
+        "sourceChainId": str(source_chain_id),
+        "destChainId": str(dest_chain_id),
+        "sourceToken": token_address,
+        "destToken": token_address,  # Bridging same token
+        "amount": amount,
+        "userAddress": user_address,
+        "targetRecipient": user_address,
     }
-    if taker_address:
-        params["takerAddress"] = taker_address
-    response = httpx.get(
-        f"{endpoint}/swap/v1/quote",
-        params=params,
-        headers={"0x-api-key": Config.ZERO_X_API_KEY},
+
+    response = httpx.post(
+        f"{ORBITER_API_BASE}/quote",
+        json=payload,
+        timeout=30.0,
     )
     response.raise_for_status()
     return response.json()
 
 
-def _swap_via_0x(wallet_id, config, token_in, token_out, amount, taker_address: str | None = None):
-    """Get quote from 0x API, then send tx via Privy."""
+def _bridge_via_orbiter(
+    wallet_id: str,
+    source_chain_config: dict,
+    dest_chain_id: int,
+    token_address: str,
+    amount: str,
+    user_address: str,
+) -> dict:
+    """Get quote from Orbiter and execute bridge transaction."""
+    quote = _get_orbiter_quote(
+        source_chain_id=source_chain_config["chain_id"],
+        dest_chain_id=dest_chain_id,
+        token_address=token_address,
+        amount=amount,
+        user_address=user_address,
+    )
+
+    # Extract transaction data from quote
+    if "steps" not in quote or len(quote["steps"]) == 0:
+        raise ValueError("Invalid quote response from Orbiter")
+
+    step = quote["steps"][0]
+    tx_data = step.get("txData", {})
+
+    return _privy_send_tx(
+        wallet_id=wallet_id,
+        caip2=source_chain_config["caip2"],
+        to=tx_data.get("to"),
+        data=tx_data.get("data"),
+        value=int(tx_data.get("value", "0")),
+    )
+
+def _get_0x_quote(config: dict, token_in: str, token_out: str, amount: str, taker_address: str) -> dict:
+    """Fetch a swap quote from the 0x API v2."""
+    endpoint = ZERO_X_ENDPOINTS[config["chain_id"]]
+    params = {
+        "chainId": str(config["chain_id"]),
+        "sellToken": token_in,
+        "buyToken": token_out,
+        "sellAmount": amount,
+        "taker": taker_address,
+    }
+
+    headers = {"0x-version": "v2"}
+    if Config.ZERO_X_API_KEY:
+        headers["0x-api-key"] = Config.ZERO_X_API_KEY
+
+    response = httpx.get(
+        f"{endpoint}/swap/allowance-holder/quote",
+        params=params,
+        headers=headers,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _swap_via_0x(
+    wallet_id,
+    config,
+    token_in,
+    token_out,
+    amount,
+    taker_address: str,
+):
+    """Get quote from 0x API v2, then send tx via Privy."""
     quote = _get_0x_quote(config, token_in, token_out, amount, taker_address)
 
     return _privy_send_tx(
@@ -189,7 +270,13 @@ def _swap_via_0x(wallet_id, config, token_in, token_out, amount, taker_address: 
     )
 
 
-def _swap_via_router(wallet_id, config, token_in, token_out, amount):
+def _swap_via_router(
+    wallet_id,
+    config,
+    token_in,
+    token_out,
+    amount,
+):
     """Build calldata for EGAS Swap router on ENI."""
     calldata = build_egas_swap_calldata(token_in, token_out, amount)
 
@@ -201,7 +288,12 @@ def _swap_via_router(wallet_id, config, token_in, token_out, amount):
     )
 
 @tool
-def review_swap(chain: str, token_in: str, token_out: str, amount: str, wallet_address: str) -> str:
+def review_swap(
+    chain: str,
+    token_in: str,
+    token_out: str,
+    amount: str,
+) -> str:
     """
     Preview a swap quote without executing it.
 
@@ -214,11 +306,16 @@ def review_swap(chain: str, token_in: str, token_out: str, amount: str, wallet_a
         token_in: Symbol of the token to sell (e.g. "ETH", "USDC")
         token_out: Symbol of the token to buy (e.g. "USDC", "ETH")
         amount: Sell amount in the token's smallest unit (e.g. "1000000" for 1 USDC)
-        wallet_address: User's EVM wallet address (used as takerAddress for accurate quote)
 
     Returns:
         Human-readable swap summary with fees included, or an error message.
     """
+    config = ensure_config()
+    wallet_address = config.get("configurable", {}).get("user_wallet_address")
+
+    if not wallet_address:
+        return "❌ Wallet address is required to preview swap quotes. Please ensure user_wallet_address is configured."
+
     if chain not in CHAINS_CONFIG:
         return f"❌ Unsupported chain '{chain}'. Supported: {', '.join(CHAINS_CONFIG)}"
 
@@ -306,18 +403,214 @@ def review_swap(chain: str, token_in: str, token_out: str, amount: str, wallet_a
 
 
 @tool
-def swap_token(wallet_id: str, wallet_address: str, chain: str, token_in: str, token_out: str, amount: str) -> dict:
+def swap_token(
+    wallet_address: str,
+    chain: str,
+    token_in: str,
+    token_out: str,
+    amount: str,
+) -> dict:
     """Swap tokens. Uses 0x on major chains, EGAS router on ENI."""
-    config = CHAINS_CONFIG[chain]
-    token_in_addr = config["tokens"][token_in]
-    token_out_addr = config["tokens"][token_out]
+    config = ensure_config()
+    wallet_id = config.get("configurable", {}).get("user_wallet_id")
+    if not wallet_id:
+        raise ValueError("Missing user_wallet_id in config")
 
-    if config["swap_provider"] == "0x":
-        return _swap_via_0x(wallet_id, config, token_in_addr, token_out_addr, amount, taker_address=wallet_address)
+    chain_config = CHAINS_CONFIG[chain]
+
+    token_in_addr = chain_config["tokens"][token_in]
+    token_out_addr = chain_config["tokens"][token_out]
+
+    if chain_config["swap_provider"] == "0x":
+        return _swap_via_0x(
+            wallet_id,
+            chain_config,
+            token_in_addr,
+            token_out_addr,
+            amount,
+            taker_address=wallet_address,
+        )
     else:
-        return _swap_via_router(wallet_id, config, token_in_addr, token_out_addr, amount)
+        return _swap_via_router(
+            wallet_id,
+            chain_config,
+            token_in_addr,
+            token_out_addr,
+            amount,
+        )
+
+
+@tool
+def review_bridge(
+    source_chain: str,
+    dest_chain: str,
+    token: str,
+    amount: str,
+) -> str:
+    """
+    Preview a bridge transaction without executing it.
+
+    Returns the expected output amount, fees, estimated time, and other details
+    so the user can confirm before calling bridge_token.
+
+    Args:
+        source_chain: Source chain name (e.g. "ethereum", "arbitrum", "base")
+        dest_chain: Destination chain name (e.g. "arbitrum", "base", "polygon")
+        token: Symbol of the token to bridge (e.g. "ETH", "USDC")
+        amount: Amount in the token's smallest unit (e.g. "1000000" for 1 USDC)
+
+    Returns:
+        Human-readable bridge summary with fees and estimated time, or an error message.
+    """
+    config = ensure_config()
+    wallet_address = config.get("configurable", {}).get("user_wallet_address")
+
+    if not wallet_address:
+        return "❌ Wallet address is required to preview bridge quotes. Please ensure user_wallet_address is configured."
+
+    # Validate chains
+    if source_chain not in CHAINS_CONFIG:
+        return f"❌ Unsupported source chain '{source_chain}'. Supported: {', '.join(CHAINS_CONFIG)}"
+
+    if dest_chain not in CHAINS_CONFIG:
+        return f"❌ Unsupported destination chain '{dest_chain}'. Supported: {', '.join(CHAINS_CONFIG)}"
+
+    source_config = CHAINS_CONFIG[source_chain]
+    dest_config = CHAINS_CONFIG[dest_chain]
+
+    # Check if bridge is supported
+    if not source_config.get("bridge", {}).get("orbiter"):
+        return f"❌ Orbiter bridge is not available on {source_chain}"
+
+    if dest_chain not in source_config["bridge"].get("targets", []):
+        supported_targets = ", ".join(source_config["bridge"]["targets"])
+        return f"❌ Cannot bridge from {source_chain} to {dest_chain}. Supported targets: {supported_targets}"
+
+    # Validate token
+    if token not in source_config["tokens"]:
+        supported = ", ".join(source_config["tokens"])
+        return f"❌ Unsupported token on {source_chain}. Supported tokens: {supported}"
+
+    token_addr = source_config["tokens"][token]
+
+    try:
+        quote = _get_orbiter_quote(
+            source_chain_id=source_config["chain_id"],
+            dest_chain_id=dest_config["chain_id"],
+            token_address=token_addr,
+            amount=amount,
+            user_address=wallet_address,
+        )
+    except Exception as e:
+        return f"❌ Failed to fetch bridge quote: {e}"
+
+    if "error" in quote:
+        return f"❌ Orbiter API error: {quote.get('error', quote)}"
+
+    def _fmt(raw: str | int | None, symbol: str) -> str:
+        """Format a raw token amount using known decimals."""
+        if raw is None:
+            return "N/A"
+        decimals = TOKEN_DECIMALS.get(symbol, 18)
+        value = int(raw) / 10 ** decimals
+        return f"{value:,.6f} {symbol}".rstrip("0").rstrip(".")
+
+    # Extract quote details
+    send_amount = quote.get("sendAmount", amount)
+    receive_amount = quote.get("destAmount", "0")
+
+    send_display = _fmt(send_amount, token)
+    receive_display = _fmt(receive_amount, token)
+
+    # Calculate total fees
+    fees = quote.get("fee", {})
+    withholding_fee = fees.get("withholdingFee", {})
+    trade_fee = fees.get("tradingFee", {})
+
+    total_fee_value = float(withholding_fee.get("value", 0)) + float(trade_fee.get("value", 0))
+    total_fee_usd = float(withholding_fee.get("usd", 0)) + float(trade_fee.get("usd", 0))
+
+    fee_display = _fmt(int(total_fee_value) if total_fee_value else 0, token)
+    fee_usd_display = f"${total_fee_usd:.2f}" if total_fee_usd else "N/A"
+
+    # Estimated time (if provided)
+    estimated_time = quote.get("estimatedTime", "N/A")
+    if isinstance(estimated_time, (int, float)):
+        time_display = f"~{int(estimated_time / 60)} minutes"
+    else:
+        time_display = "N/A"
+
+    return (
+        f"🌉 Bridge Preview: {source_chain.capitalize()} → {dest_chain.capitalize()}\n"
+        f"  You send    : {send_display}\n"
+        f"  You receive : {receive_display}\n"
+        f"\n"
+        f"💸 Fees\n"
+        f"  Total fee      : {fee_display} ({fee_usd_display})\n"
+        f"  Estimated time : {time_display}\n"
+        f"\n"
+        f"⚠️  This is a preview only. Call bridge_token to execute."
+    )
+
+
+@tool
+def bridge_token(
+    wallet_address: str,
+    source_chain: str,
+    dest_chain: str,
+    token: str,
+    amount: str,
+) -> dict:
+    """
+    Bridge tokens from one chain to another using Orbiter Finance.
+
+    Args:
+        wallet_address: User's wallet address
+        source_chain: Source chain name (e.g. "ethereum", "arbitrum", "base")
+        dest_chain: Destination chain name (e.g. "arbitrum", "base", "polygon")
+        token: Symbol of the token to bridge (e.g. "ETH", "USDC")
+        amount: Amount in the token's smallest unit (e.g. "1000000" for 1 USDC)
+
+    Returns:
+        Transaction hash and details
+    """
+    config = ensure_config()
+    wallet_id = config.get("configurable", {}).get("user_wallet_id")
+    if not wallet_id:
+        raise ValueError("Missing user_wallet_id in config")
+
+    # Validate chains
+    if source_chain not in CHAINS_CONFIG or dest_chain not in CHAINS_CONFIG:
+        raise ValueError(f"Invalid chain. Supported: {', '.join(CHAINS_CONFIG)}")
+
+    source_config = CHAINS_CONFIG[source_chain]
+    dest_config = CHAINS_CONFIG[dest_chain]
+
+    # Validate bridge support
+    if not source_config.get("bridge", {}).get("orbiter"):
+        raise ValueError(f"Orbiter bridge not available on {source_chain}")
+
+    if dest_chain not in source_config["bridge"].get("targets", []):
+        raise ValueError(f"Cannot bridge from {source_chain} to {dest_chain}")
+
+    # Validate token
+    if token not in source_config["tokens"]:
+        raise ValueError(f"Token {token} not supported on {source_chain}")
+
+    token_addr = source_config["tokens"][token]
+
+    return _bridge_via_orbiter(
+        wallet_id=wallet_id,
+        source_chain_config=source_config,
+        dest_chain_id=dest_config["chain_id"],
+        token_address=token_addr,
+        amount=amount,
+        user_address=wallet_address,
+    )
     
 tools = [
     review_swap,
     swap_token,
+    review_bridge,
+    bridge_token,
 ]
