@@ -259,6 +259,7 @@ class SwarmCompletion(BaseCompletionAction):
     async def create_agent_completion(
         self,
         user_id: str,
+        user_wallet_id: Optional[str],
         user_wallet_address: Optional[str],
         conversation_id: str,
         message: str,
@@ -284,7 +285,14 @@ class SwarmCompletion(BaseCompletionAction):
             conversation_id=conversation_id
         )
         
-        config = self._create_graph_config(user_id, user_wallet_address, conversation_id, agent_kyas=agent_kyas, metadata=metadata)
+        config = self._create_graph_config(
+            user_id,
+            user_wallet_id,
+            user_wallet_address,
+            conversation_id,
+            agent_kyas=agent_kyas,
+            metadata=metadata
+        )
         
         result = agent.invoke(
             input=input_data,

@@ -33,6 +33,11 @@ class AgentMentionEvent(BaseModel):
         description="User who created the content"
     )
     
+    user_wallet_id: Optional[str] = Field(
+        None,
+        description="Wallet ID of the user"
+    )
+    
     user_wallet_address: Optional[str] = Field(
         None,
         description="Wallet address of the user"
