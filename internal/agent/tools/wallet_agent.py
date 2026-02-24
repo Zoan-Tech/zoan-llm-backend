@@ -150,19 +150,22 @@ def _privy_send_tx(
     value: str = "0x0",
 ) -> dict:
     """Send transaction using pre-created dashboard signer."""
-    transaction = {"to": to, "value": value}
-    if data:
-        transaction["data"] = data
+    try:
+        transaction = {"to": to, "value": value}
+        if data:
+            transaction["data"] = data
 
-    # Privy SDK handles authorization with server-side signer
-    tx = client.wallets.rpc(
-        wallet_id=wallet_id,
-        method="eth_sendTransaction",
-        caip2=caip2,
-        params={"transaction": transaction},
-    )
-    
-    return {"hash": tx.data.hash, "caip2": tx.data.caip2}
+        # Privy SDK handles authorization with server-side signer
+        tx = client.wallets.rpc(
+            wallet_id=wallet_id,
+            method="eth_sendTransaction",
+            caip2=caip2,
+            params={"transaction": transaction},
+        )
+        
+        return {"hash": tx.data.hash, "caip2": tx.data.caip2}
+    except Exception as e:
+        raise RuntimeError(f"Privy transaction failed: {e}. Ensure user has set up KYA with Wallet Agent. Go the 'Explore' page > pair Wallet Agent > finish.")
 
 #### SWAP HELPER FUNCTIONS ####
 

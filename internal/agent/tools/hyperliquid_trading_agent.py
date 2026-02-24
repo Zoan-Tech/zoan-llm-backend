@@ -55,7 +55,7 @@ def place_limit_order(
     configurable = config.get('configurable', {})
     agent_wallet: Optional[AgentKYA] = configurable.get('agent_kya', {}).get(AGENT_NAME)
     if not agent_wallet:
-        return "Error: User information for Hyperliquid Trading Agent not found in configuration."
+        return "Ensure user has set up KYA with Hyperliquid Trading Agent. Go the 'Explore' page > pair Hyperliquid Agent > finish."
     
     wallet_private_key = agent_wallet.wallet_private_key.get_secret_value()
     
@@ -151,7 +151,7 @@ def place_trigger_order(
     configurable = config.get('configurable', {})
     agent_wallet: Optional[AgentKYA] = configurable.get('agent_kya', {}).get(AGENT_NAME)
     if not agent_wallet:
-        return "Error: User information for Hyperliquid Trading Agent not found in configuration."
+        return "Ensure user has set up KYA with Hyperliquid Trading Agent. Go the 'Explore' page > pair Hyperliquid Agent > finish."
     
     wallet_private_key = agent_wallet.wallet_private_key.get_secret_value()
     
@@ -221,7 +221,7 @@ def cancel_order(
     configurable = config.get('configurable', {})
     agent_wallet: Optional[AgentKYA] = configurable.get('agent_kya', {}).get(AGENT_NAME)
     if not agent_wallet:
-        return "Error: User information for Hyperliquid Trading Agent not found in configuration."
+        return "Ensure user has set up KYA with Hyperliquid Trading Agent. Go the 'Explore' page > pair Hyperliquid Agent > finish."
     
     wallet_private_key = agent_wallet.wallet_private_key.get_secret_value()
     
@@ -524,7 +524,7 @@ def cancel_all_orders(
     configurable = config.get('configurable', {})
     agent_wallet: Optional[AgentKYA] = configurable.get('agent_kya', {}).get(AGENT_NAME)
     if not agent_wallet:
-        return "Error: User information for Hyperliquid Trading Agent not found in configuration."
+        return "Ensure user has set up KYA with Hyperliquid Trading Agent. Go the 'Explore' page > pair Hyperliquid Agent > finish."
     
     wallet_private_key = agent_wallet.wallet_private_key.get_secret_value()
     
