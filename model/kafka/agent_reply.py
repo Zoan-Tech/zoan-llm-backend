@@ -11,11 +11,9 @@ class AgentReplyEvent(BaseModel):
     This model represents a comment creation request for agent replies.
     """
     
-    content: list[dict[str, str]] = Field(
+    content: str = Field(
         ...,
-        min_length=1,
-        max_length=280,
-        description="Reply content (1-280 characters)"
+        description="Reply content"
     )
     post_id: str = Field(
         ...,
