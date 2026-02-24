@@ -139,7 +139,7 @@ TOKEN_DECIMALS = {
     "USDC": 6, "USDT": 6,
 }
 
-ORBITER_API_BASE = "https://api.orbiter.finance"
+ORBITER_API_BASE = "https://openapi.orbiter.finance"
 
 
 def _privy_send_tx(
@@ -282,70 +282,7 @@ def _swap_via_router(
         to=config["swap_router"],
         data=calldata,
     )
-
-
-#### BRIDGE HELPER FUNCTIONS ####
-
-def _get_orbiter_quote(
-    source_chain_id: int,
-    dest_chain_id: int,
-    token_address: str,
-    amount: str,
-    user_address: str,
-) -> dict:
-    """Get a bridge quote from Orbiter Finance API."""
-    payload = {
-        "sourceChainId": str(source_chain_id),
-        "destChainId": str(dest_chain_id),
-        "sourceToken": token_address,
-        "destToken": token_address,  # Bridging same token
-        "amount": amount,
-        "userAddress": user_address,
-        "targetRecipient": user_address,
-    }
-
-    response = httpx.post(
-        f"{ORBITER_API_BASE}/quote",
-        json=payload,
-        timeout=30.0,
-    )
-    response.raise_for_status()
-    return response.json()
-
-
-def _bridge_via_orbiter(
-    wallet_id: str,
-    source_chain_config: dict,
-    dest_chain_id: int,
-    token_address: str,
-    amount: str,
-    user_address: str,
-) -> dict:
-    """Get quote from Orbiter and execute bridge transaction."""
-    quote = _get_orbiter_quote(
-        source_chain_id=source_chain_config["chain_id"],
-        dest_chain_id=dest_chain_id,
-        token_address=token_address,
-        amount=amount,
-        user_address=user_address,
-    )
-
-    # Extract transaction data from quote
-    if "steps" not in quote or len(quote["steps"]) == 0:
-        raise ValueError("Invalid quote response from Orbiter")
-
-    step = quote["steps"][0]
-    tx_data = step.get("txData", {})
-
-    return _privy_send_tx(
-        wallet_id=wallet_id,
-        caip2=source_chain_config["caip2"],
-        to=tx_data.get("to"),
-        data=tx_data.get("data"),
-        value=int(tx_data.get("value", "0")),
-    )
-
-
+    
 @tool
 def review_swap(
     chain: str,
@@ -499,6 +436,102 @@ def swap_token(
         )
 
 
+#### BRIDGE HELPER FUNCTIONS ####
+def _normalize_token_for_bridge(token_address: str) -> str:
+    """
+    Convert token address to Orbiter-compatible format.
+    Orbiter uses 0x0000... for native tokens, not 0xEeee...
+    """
+    NATIVE_TOKEN_PLACEHOLDER = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+    ORBITER_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000"
+    
+    if token_address.lower() == NATIVE_TOKEN_PLACEHOLDER.lower():
+        return ORBITER_NATIVE_TOKEN
+    
+    return token_address
+
+def _get_orbiter_quote(
+    source_chain_id: int,
+    dest_chain_id: int,
+    source_token_address: str,
+    dest_token_address: str,
+    amount: str,
+    user_address: str,
+) -> dict:
+    """Get a bridge quote from Orbiter Finance API."""
+    source_token_normalized = _normalize_token_for_bridge(source_token_address)
+    dest_token_normalized = _normalize_token_for_bridge(dest_token_address)
+    
+    payload = {
+        "sourceChainId": str(source_chain_id),
+        "destChainId": str(dest_chain_id),
+        "sourceToken": source_token_normalized,
+        "destToken": dest_token_normalized,
+        "amount": amount,
+        "userAddress": user_address,
+        "targetRecipient": user_address,
+    }
+
+    response = httpx.post(
+        f"{ORBITER_API_BASE}/quote",
+        json=payload,
+        timeout=30.0,
+    )
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise ValueError(f"Orbiter API HTTP error: {e.response.status_code} - {e.response.text}") from e
+    data = response.json()
+    
+    if data.get("status") != "success":
+        raise ValueError(f"Orbiter API error: {data.get('message', data)}")
+    
+    return data.get("result", {})
+
+def _bridge_via_orbiter(
+    wallet_id: str,
+    source_chain_config: dict,
+    dest_chain_config: dict,
+    source_token_symbol: str,
+    amount: str,
+    user_address: str,
+) -> dict:
+    """Get quote from Orbiter and execute bridge transaction."""
+    
+    source_token_addr = source_chain_config["tokens"][source_token_symbol]
+    dest_token_addr = dest_chain_config["tokens"][source_token_symbol]
+    
+    quote = _get_orbiter_quote(
+        source_chain_id=source_chain_config["chain_id"],
+        dest_chain_id=dest_chain_config["chain_id"],
+        source_token_address=source_token_addr,
+        dest_token_address=dest_token_addr,
+        amount=amount,
+        user_address=user_address,
+    )
+
+    if "steps" not in quote or len(quote["steps"]) == 0:
+        raise ValueError("Invalid quote response from Orbiter")
+
+    step = quote["steps"][0]
+    tx_data = step.get("tx", {})
+    
+    raw_value = tx_data.get("value")
+    if raw_value is None or raw_value == "":
+        hex_value = "0x0"
+    elif not str(raw_value).startswith("0x"):
+        hex_value = hex(int(raw_value))
+    else:
+        hex_value = raw_value
+
+    return _privy_send_tx(
+        wallet_id=wallet_id,
+        caip2=source_chain_config["caip2"],
+        to=tx_data.get("to"),
+        data=tx_data.get("data"),
+        value=hex_value,
+    )
+
 @tool
 def review_bridge(
     source_chain: str,
@@ -537,67 +570,57 @@ def review_bridge(
     source_config = CHAINS_CONFIG[source_chain]
     dest_config = CHAINS_CONFIG[dest_chain]
 
-    # Check if bridge is supported
+    # Validate token exists on BOTH chains
+    if token not in source_config["tokens"]:
+        return f"❌ Token {token} not supported on {source_chain}."
+    
+    if token not in dest_config["tokens"]:  # ✅ Check destination too
+        return f"❌ Token {token} not supported on {dest_chain}."
+
     if not source_config.get("bridge", {}).get("orbiter"):
-        return f"❌ Orbiter bridge is not available on {source_chain}"
+        return f"❌ Orbiter bridge not available on {source_chain}."
 
     if dest_chain not in source_config["bridge"].get("targets", []):
-        supported_targets = ", ".join(source_config["bridge"]["targets"])
-        return f"❌ Cannot bridge from {source_chain} to {dest_chain}. Supported targets: {supported_targets}"
+        return f"❌ Cannot bridge from {source_chain} to {dest_chain}."
 
-    # Validate token
-    if token not in source_config["tokens"]:
-        supported = ", ".join(source_config["tokens"])
-        return f"❌ Unsupported token on {source_chain}. Supported tokens: {supported}"
-
-    token_addr = source_config["tokens"][token]
+    source_token_addr = source_config["tokens"][token]
+    dest_token_addr = dest_config["tokens"][token]
 
     try:
         quote = _get_orbiter_quote(
             source_chain_id=source_config["chain_id"],
             dest_chain_id=dest_config["chain_id"],
-            token_address=token_addr,
+            source_token_address=source_token_addr,
+            dest_token_address=dest_token_addr,
             amount=amount,
             user_address=wallet_address,
         )
     except Exception as e:
         return f"❌ Failed to fetch bridge quote: {e}"
 
-    if "error" in quote:
-        return f"❌ Orbiter API error: {quote.get('error', quote)}"
-
     def _fmt(raw: str | int | None, symbol: str) -> str:
-        """Format a raw token amount using known decimals."""
         if raw is None:
             return "N/A"
         decimals = TOKEN_DECIMALS.get(symbol, 18)
         value = int(raw) / 10 ** decimals
         return f"{value:,.6f} {symbol}".rstrip("0").rstrip(".")
 
-    # Extract quote details
-    send_amount = quote.get("sendAmount", amount)
-    receive_amount = quote.get("destAmount", "0")
+    details = quote.get("details", {})
+    send_amount = details.get("sourceTokenAmount", amount)
+    receive_amount = details.get("destTokenAmount", "0")
 
     send_display = _fmt(send_amount, token)
     receive_display = _fmt(receive_amount, token)
 
-    # Calculate total fees
-    fees = quote.get("fee", {})
-    withholding_fee = fees.get("withholdingFee", {})
-    trade_fee = fees.get("tradingFee", {})
+    fees = quote.get("fees", {})
+    withholding_fee = fees.get("withholdingFee", "0")
+    trade_fee = fees.get("tradeFee", "0")
+    
+    total_fee_value = float(withholding_fee) + float(trade_fee)
+    total_fee_usd = float(fees.get("withholdingFeeUSD", "0")) + float(fees.get("tradeFeeUSD", "0"))
 
-    total_fee_value = float(withholding_fee.get("value", 0)) + float(trade_fee.get("value", 0))
-    total_fee_usd = float(withholding_fee.get("usd", 0)) + float(trade_fee.get("usd", 0))
-
-    fee_display = _fmt(int(total_fee_value) if total_fee_value else 0, token)
+    fee_display = _fmt(int(total_fee_value * 10**TOKEN_DECIMALS.get(token, 18)), token)
     fee_usd_display = f"${total_fee_usd:.2f}" if total_fee_usd else "N/A"
-
-    # Estimated time (if provided)
-    estimated_time = quote.get("estimatedTime", "N/A")
-    if isinstance(estimated_time, (int, float)):
-        time_display = f"~{int(estimated_time / 60)} minutes"
-    else:
-        time_display = "N/A"
 
     return (
         f"🌉 Bridge Preview: {source_chain.capitalize()} → {dest_chain.capitalize()}\n"
@@ -606,15 +629,12 @@ def review_bridge(
         f"\n"
         f"💸 Fees\n"
         f"  Total fee      : {fee_display} ({fee_usd_display})\n"
-        f"  Estimated time : {time_display}\n"
         f"\n"
         f"⚠️  This is a preview only. Call bridge_token to execute."
     )
 
-
 @tool
 def bridge_token(
-    wallet_address: str,
     source_chain: str,
     dest_chain: str,
     token: str,
@@ -634,8 +654,9 @@ def bridge_token(
         Transaction hash and details
     """
     config = ensure_config()
+    wallet_address = config.get("configurable", {}).get("user_wallet_address")
     wallet_id = config.get("configurable", {}).get("user_wallet_id")
-    if not wallet_id:
+    if not wallet_id or not wallet_address:
         raise ValueError("Missing user_wallet_id in config")
 
     # Validate chains
@@ -645,24 +666,23 @@ def bridge_token(
     source_config = CHAINS_CONFIG[source_chain]
     dest_config = CHAINS_CONFIG[dest_chain]
 
-    # Validate bridge support
+    if token not in source_config["tokens"]:
+        raise ValueError(f"Token {token} not supported on {source_chain}")
+    
+    if token not in dest_config["tokens"]:
+        raise ValueError(f"Token {token} not supported on {dest_chain}")
+
     if not source_config.get("bridge", {}).get("orbiter"):
         raise ValueError(f"Orbiter bridge not available on {source_chain}")
 
     if dest_chain not in source_config["bridge"].get("targets", []):
         raise ValueError(f"Cannot bridge from {source_chain} to {dest_chain}")
 
-    # Validate token
-    if token not in source_config["tokens"]:
-        raise ValueError(f"Token {token} not supported on {source_chain}")
-
-    token_addr = source_config["tokens"][token]
-
     return _bridge_via_orbiter(
         wallet_id=wallet_id,
         source_chain_config=source_config,
-        dest_chain_id=dest_config["chain_id"],
-        token_address=token_addr,
+        dest_chain_config=dest_config,
+        source_token_symbol=token,
         amount=amount,
         user_address=wallet_address,
     )
