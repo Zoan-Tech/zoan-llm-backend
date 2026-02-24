@@ -11,7 +11,7 @@ class AgentReplyEvent(BaseModel):
     This model represents a comment creation request for agent replies.
     """
     
-    content: str = Field(
+    content: list[dict[str, str]] = Field(
         ...,
         description="Reply content"
     )
