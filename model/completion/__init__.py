@@ -33,10 +33,10 @@ __all__ = [
 class Attachment(BaseModel):
     """Model representing a file attachment in a message."""
     url: str = Field(..., description="URL of the attachment")
-    file_name: str = Field(..., description="Name of the file")
+    file_name: Optional[str] = Field(None, description="Name of the file")
     mime_type: str = Field(..., description="MIME type of the attachment")
-    file_size: str = Field(..., description="Size of the file in bytes")
-    type: str = Field(..., description="Type of the attachment")
+    file_size: Optional[str] = Field(None, description="Size of the file in bytes")
+    type: Optional[str] = Field(None, description="Type of the attachment")
 
 
 class Metadata(BaseModel):

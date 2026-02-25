@@ -337,7 +337,7 @@ class BaseCompletionAction:
         """Create input configuration for the graph with image attachments."""
         mutimodal_input = []
         for attachment in attachments:
-            if attachment.type == "file":
+            if not attachment.type or attachment.type == "file":
                 content_blocks = [
                     {
                         "type": "text",
