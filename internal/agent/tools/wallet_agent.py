@@ -218,7 +218,7 @@ def _wait_for_tx_receipt(rpc_url: str, tx_hash: str, timeout: int = 60, poll_int
         if receipt is not None:
             status = int(receipt.get("status", "0x0"), 16)
             if status == 1:
-                logger.info(f"[WAIT_TX] tx {tx_hash} confirmed (status=1)")
+                logger.debug(f"[WAIT_TX] tx {tx_hash} confirmed (status=1)")
                 return receipt
             else:
                 raise RuntimeError(f"Transaction {tx_hash} reverted (status=0)")
@@ -259,7 +259,7 @@ def _privy_sign_and_broadcast(
         "type": 0,  # Legacy transaction
     }
 
-    logger.info(f"[SIGN_BROADCAST] Signing tx: wallet={wallet_id}, chain_id={chain_id}, to={to}, value={value}, nonce={nonce}, gas_price={gas_price}")
+    logger.debug(f"[SIGN_BROADCAST] Signing tx: wallet={wallet_id}, chain_id={chain_id}, to={to}, value={value}, nonce={nonce}, gas_price={gas_price}")
 
     # 4. Sign with Privy (no caip2 needed!)
     sign_result = client.wallets.rpc(
@@ -269,11 +269,11 @@ def _privy_sign_and_broadcast(
     )
 
     signed_tx = sign_result.data.signed_transaction
-    logger.info(f"[SIGN_BROADCAST] Got signed tx (encoding={sign_result.data.encoding})")
+    logger.debug(f"[SIGN_BROADCAST] Got signed tx (encoding={sign_result.data.encoding})")
 
     # 5. Broadcast to target chain RPC
     tx_hash = _rpc_call(rpc_url, "eth_sendRawTransaction", [signed_tx])
-    logger.info(f"[SIGN_BROADCAST] Broadcasted! tx_hash={tx_hash}")
+    logger.debug(f"[SIGN_BROADCAST] Broadcasted! tx_hash={tx_hash}")
 
     return {"hash": tx_hash, "chain_id": chain_id}
 
@@ -416,14 +416,14 @@ def _swap_via_router(
     is_native = token_in.lower() in (NATIVE_ZERO.lower(), NATIVE_PLACEHOLDER.lower())
     value = hex(int(amount)) if is_native else "0x0"
 
-    logger.info(f"[SWAP_ROUTER] wallet_id={wallet_id}, token_in={token_in}, token_out={token_out}, amount={amount}, value={value}, is_native={is_native}")
+    logger.debug(f"[SWAP_ROUTER] wallet_id={wallet_id}, token_in={token_in}, token_out={token_out}, amount={amount}, value={value}, is_native={is_native}")
 
     result = {}
 
     # If tokenIn is ERC20 (not native), approve the router to spend it first
     if not is_native:
         approve_data = _encode_erc20_approve(config["swap_router"], int(amount))
-        logger.info(f"[SWAP_ROUTER] Sending ERC20 approve: token={token_in}, spender={config['swap_router']}, amount={amount}")
+        logger.debug(f"[SWAP_ROUTER] Sending ERC20 approve: token={token_in}, spender={config['swap_router']}, amount={amount}")
 
         approval_tx = _privy_sign_and_broadcast(
             wallet_id=wallet_id,
@@ -435,10 +435,10 @@ def _swap_via_router(
             value="0x0",
         )
         result["approval_tx"] = approval_tx
-        logger.info(f"[SWAP_ROUTER] Approval tx sent: {approval_tx}")
+        logger.debug(f"[SWAP_ROUTER] Approval tx sent: {approval_tx}")
 
         # Wait for approval tx to be confirmed before sending swap tx
-        logger.info(f"[SWAP_ROUTER] Waiting for approval tx to be confirmed...")
+        logger.debug(f"[SWAP_ROUTER] Waiting for approval tx to be confirmed...")
         _wait_for_tx_receipt(config["rpc"], approval_tx["hash"])
 
     # Execute the swap
@@ -455,7 +455,7 @@ def _swap_via_router(
 
     # Wait for swap tx confirmation and check status
     try:
-        logger.info(f"[SWAP_ROUTER] Waiting for swap tx to be confirmed...")
+        logger.debug(f"[SWAP_ROUTER] Waiting for swap tx to be confirmed...")
         receipt = _wait_for_tx_receipt(config["rpc"], swap_tx["hash"])
         result["status"] = "✅ Swap confirmed successfully"
     except RuntimeError as e:
@@ -611,7 +611,7 @@ def swap_token(
         # Convert human-readable amount to smallest unit (wei) using TOKEN_DECIMALS
         decimals = TOKEN_DECIMALS.get(token_in, 18)
         amount_wei = str(int(float(amount) * (10 ** decimals)))
-        logger.info(f"[SWAP] Converting amount: {amount} {token_in} ({decimals} decimals) -> {amount_wei} wei")
+        logger.debug(f"[SWAP] Converting amount: {amount} {token_in} ({decimals} decimals) -> {amount_wei} wei")
 
         if chain_config["swap_provider"] == "0x":
             return _swap_via_0x(
@@ -700,8 +700,8 @@ def _bridge_via_orbiter(
     source_token_addr = source_chain_config["tokens"][source_token_symbol]
     dest_token_addr = dest_chain_config["tokens"][source_token_symbol]
 
-    logger.info(f"[BRIDGE] Starting bridge: token={source_token_symbol}, amount={amount}, source_token={source_token_addr}, dest_token={dest_token_addr}")
-    logger.info(f"[BRIDGE] source_chain_id={source_chain_config['chain_id']}, dest_chain_id={dest_chain_config['chain_id']}")
+    logger.debug(f"[BRIDGE] Starting bridge: token={source_token_symbol}, amount={amount}, source_token={source_token_addr}, dest_token={dest_token_addr}")
+    logger.debug(f"[BRIDGE] source_chain_id={source_chain_config['chain_id']}, dest_chain_id={dest_chain_config['chain_id']}")
     
     quote = _get_orbiter_quote(
         source_chain_id=source_chain_config["chain_id"],
@@ -712,7 +712,7 @@ def _bridge_via_orbiter(
         user_address=user_address,
     )
 
-    logger.info(f"[BRIDGE] Orbiter quote response type={type(quote).__name__}")
+    logger.debug(f"[BRIDGE] Orbiter quote response type={type(quote).__name__}")
 
     if isinstance(quote, str):
         logger.error(f"[BRIDGE] Quote returned error string: {quote}")
@@ -723,7 +723,7 @@ def _bridge_via_orbiter(
         return {"error": "Invalid quote response from Orbiter"}
 
     steps = quote["steps"]
-    logger.info(f"[BRIDGE] Got {len(steps)} steps: {[s.get('action') for s in steps]}")
+    logger.debug(f"[BRIDGE] Got {len(steps)} steps: {[s.get('action') for s in steps]}")
 
     # Detect if source chain is ENI (needs sign-and-broadcast workaround)
     is_eni_chain = source_chain_config.get("swap_provider") == "router"
@@ -742,7 +742,7 @@ def _bridge_via_orbiter(
         to_addr = step_tx_data.get("to")
         data = step_tx_data.get("data")
 
-        logger.info(f"[BRIDGE] Sending step '{step_action}': to={to_addr}, value={hex_value}, data_len={len(data or '')}")
+        logger.debug(f"[BRIDGE] Sending step '{step_action}': to={to_addr}, value={hex_value}, data_len={len(data or '')}")
 
         if is_eni_chain:
             return _privy_sign_and_broadcast(
@@ -772,20 +772,20 @@ def _bridge_via_orbiter(
             logger.warning(f"[BRIDGE] Step '{action}' has no tx data, skipping")
             continue
 
-        logger.info(f"[BRIDGE] Executing step {i+1}/{len(steps)}: '{action}'")
+        logger.debug(f"[BRIDGE] Executing step {i+1}/{len(steps)}: '{action}'")
 
         try:
             tx_result = _send_step_tx(tx_data, action)
-            logger.info(f"[BRIDGE] Step '{action}' tx result: {tx_result}")
+            logger.debug(f"[BRIDGE] Step '{action}' tx result: {tx_result}")
             result["steps_executed"].append({"action": action, "tx": tx_result})
 
             # Wait for confirmation before next step (ALL chains — needed for USDT revoke/approve sequence)
             tx_hash = tx_result.get("hash", "") if isinstance(tx_result, dict) else ""
             if tx_hash:
                 rpc_url = source_chain_config["rpc"]
-                logger.info(f"[BRIDGE] Waiting for step '{action}' tx {tx_hash} to confirm...")
+                logger.debug(f"[BRIDGE] Waiting for step '{action}' tx {tx_hash} to confirm...")
                 _wait_for_tx_receipt(rpc_url, tx_hash)
-                logger.info(f"[BRIDGE] Step '{action}' confirmed!")
+                logger.debug(f"[BRIDGE] Step '{action}' confirmed!")
 
             # Track the bridge tx separately
             if action == "bridge":
@@ -799,7 +799,7 @@ def _bridge_via_orbiter(
     # Final status
     if "bridge_tx" in result:
         result["status"] = "✅ Bridge completed successfully"
-        logger.info(f"[BRIDGE] All steps completed successfully!")
+        logger.debug(f"[BRIDGE] All steps completed successfully!")
     else:
         result["status"] = "⚠️ No bridge step was found in the quote"
         logger.warning(f"[BRIDGE] No bridge action found in steps")
@@ -955,7 +955,7 @@ def bridge_token(
         # Convert human-readable amount to smallest unit (wei) using TOKEN_DECIMALS
         decimals = TOKEN_DECIMALS.get(token, 18)
         amount_wei = str(int(float(amount) * (10 ** decimals)))
-        logger.info(f"[BRIDGE] Converting amount: {amount} {token} ({decimals} decimals) -> {amount_wei} wei")
+        logger.debug(f"[BRIDGE] Converting amount: {amount} {token} ({decimals} decimals) -> {amount_wei} wei")
 
         return _bridge_via_orbiter(
             wallet_id=wallet_id,
