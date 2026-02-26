@@ -15,6 +15,7 @@ from internal.agent.aster_trading_agent import aster_trading_agent
 from internal.agent.hyperliquid_trading_agent import hyperliquid_trading_agent
 from internal.agent.coingecko_agent import coingecko_agent
 from internal.agent.wallet_agent import wallet_agent
+from internal.agent.defi_llama_agent import defi_llama_agent
 
 __all__ = [
     "primary_agent",
@@ -23,5 +24,6 @@ __all__ = [
     "hyperliquid_trading_agent",
     "coingecko_agent",
     "wallet_agent",
+    "defi_llama_agent",
     "BaseInternalAgent",
 ]

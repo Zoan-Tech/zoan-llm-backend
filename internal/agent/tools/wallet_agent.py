@@ -2,7 +2,10 @@ import httpx
 from langchain_core.tools import tool
 from privy import PrivyAPI
 from config import Config
+from config.logging import get_logger
 from langchain_core.runnables.config import ensure_config
+
+logger = get_logger()
 
 # Initialize once
 client = PrivyAPI(
@@ -23,7 +26,7 @@ CHAINS_CONFIG = {
         },
         "bridge": {
             "orbiter": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
-            "targets": ["arbitrum", "base", "bnb", "optimism", "polygon"],
+            "targets": ["arbitrum", "base", "bnb", "optimism", "polygon", "eni"],
         },
     },
     "polygon": {
@@ -39,7 +42,7 @@ CHAINS_CONFIG = {
         },
         "bridge": {
             "orbiter": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
-            "targets": ["arbitrum", "base", "bnb", "ethereum", "optimism"],
+            "targets": ["arbitrum", "base", "bnb", "ethereum", "optimism", "eni"],
         },
     },
     "optimism": {
@@ -55,7 +58,7 @@ CHAINS_CONFIG = {
         },
         "bridge": {
             "orbiter": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
-            "targets": ["arbitrum", "base", "bnb", "ethereum", "polygon"],
+            "targets": ["arbitrum", "base", "bnb", "ethereum", "polygon", "eni"],
         },
     },
     "arbitrum": {
@@ -71,7 +74,7 @@ CHAINS_CONFIG = {
         },
         "bridge": {
             "orbiter": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
-            "targets": ["base", "bnb", "eni", "ethereum", "optimism", "polygon"],
+            "targets": ["base", "bnb", "eni", "ethereum", "optimism", "polygon", "eni"],
         },
     },
     "base": {
@@ -86,7 +89,7 @@ CHAINS_CONFIG = {
         },
         "bridge": {
             "orbiter": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
-            "targets": ["arbitrum", "bnb", "eni", "ethereum", "optimism", "polygon"],
+            "targets": ["arbitrum", "bnb", "eni", "ethereum", "optimism", "polygon", "eni"],
         },
     },
     "bnb": {
@@ -102,7 +105,7 @@ CHAINS_CONFIG = {
         },
         "bridge": {
             "orbiter": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
-            "targets": ["arbitrum", "base", "eni", "ethereum", "optimism", "polygon"],
+            "targets": ["arbitrum", "base", "eni", "ethereum", "optimism", "polygon", "eni"],
         },
     },
     "eni": {
@@ -110,16 +113,35 @@ CHAINS_CONFIG = {
         "chain_id": 173,
         "rpc": "https://rpc.eniac.network",
         "swap_provider": "router",
-        "swap_router": "",  # TODO: EGAS Swap router address
+        "swap_router": "0x37CCd90ed5FA96207B41C4fBCB90b883e30e63DC",  # TODO: EGAS Swap router address
         "tokens": {
-            "USDC": "",  # TODO: USDC address on ENI
-            "ENI":  "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+            "ENI-Peg USDT": "0xDC1a8A35b0BaA3229b13f348ED708a2fd50b5e3a",
+            "USDT": "0x47c98f74dBC1acc4cf2e04C4a729E22379EF4373",
+            "Orbiter USDT": "0x47c98f74dBC1acc4cf2e04C4a729E22379EF4373",
+            "USDC": "0xaFF944b96c1BAEA587159ec446280E468B32ee15",
+            "EGAS":  "0x0000000000000000000000000000000000000000",
         },
         "bridge": {
-            "orbiter": "",  # TODO: Orbiter Finance address on ENI
-            "targets": ["arbitrum", "base", "bnb"],
+            "orbiter": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
+            "targets": ["arbitrum", "base", "bnb", "ethereum"],
         },
     },
+    "eni-testnet": {
+        "caip2": "eip155:174",
+        "chain_id": 174,
+        "rpc": "https://rpc-testnet.eniac.network",
+        "swap_provider": "router",
+        "swap_router": "0x6741B16197ab5575d5A8C904159d4ef80ee1e6Bf",
+        "tokens": {
+            "ENI-Peg USDT": "0x605affcf6979afddabe6a050b182bdc390fc71ff",
+            "Orbiter USDT": "0x98183dbB8E506F3276D2ae2D0d086c3B90F0E742",
+            "EGAS":  "0x0000000000000000000000000000000000000000",
+        },
+        "bridge": {
+            "orbiter": "0x80C67432656d59144cEFf962E8fAF8926599bCF8",
+            "targets": ["arbitrum", "base", "bnb"],
+        },
+    }
 }
 
 ZERO_X_ENDPOINTS = {
@@ -136,7 +158,11 @@ TOKEN_DECIMALS = {
     "MATIC": 18, "WMATIC": 18,
     "BNB": 18, "WBNB": 18,
     "ENI": 18,
-    "USDC": 6, "USDT": 6,
+    "EGAS": 18,
+    "USDC": 6, 
+    "USDT": 6,
+    "ENI-Peg USDT": 18,
+    "Orbiter USDT": 6,
 }
 
 ORBITER_API_BASE = "https://openapi.orbiter.finance"
@@ -165,13 +191,120 @@ def _privy_send_tx(
         
         return {"hash": tx.data.hash, "caip2": tx.data.caip2}
     except Exception as e:
-        raise RuntimeError(f"Privy transaction failed: {e}. Ensure user has set up KYA with Wallet Agent. Go the 'Explore' page > pair Wallet Agent > finish.")
+        return f"Privy transaction failed: {e}. Ensure user has set up KYA with Wallet Agent. Go the 'Explore' page > pair Wallet Agent > finish."
+
+def _rpc_call(rpc_url: str, method: str, params: list) -> any:
+    """Make a JSON-RPC call to an EVM node."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params,
+    }
+    response = httpx.post(rpc_url, json=payload, timeout=30.0)
+    response.raise_for_status()
+    result = response.json()
+    if "error" in result:
+        raise RuntimeError(f"RPC error: {result['error']}")
+    return result["result"]
+
+
+def _wait_for_tx_receipt(rpc_url: str, tx_hash: str, timeout: int = 60, poll_interval: float = 1.5) -> dict:
+    """Poll eth_getTransactionReceipt until the tx is mined or timeout."""
+    import time
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        receipt = _rpc_call(rpc_url, "eth_getTransactionReceipt", [tx_hash])
+        if receipt is not None:
+            status = int(receipt.get("status", "0x0"), 16)
+            if status == 1:
+                logger.info(f"[WAIT_TX] tx {tx_hash} confirmed (status=1)")
+                return receipt
+            else:
+                raise RuntimeError(f"Transaction {tx_hash} reverted (status=0)")
+        time.sleep(poll_interval)
+    raise RuntimeError(f"Transaction {tx_hash} not confirmed within {timeout}s")
+
+
+def _privy_sign_and_broadcast(
+    wallet_id: str,
+    rpc_url: str,
+    chain_id: int,
+    sender_address: str,
+    to: str,
+    data: str,
+    value: str = "0x0",
+    gas_limit: int = 900000,
+) -> dict:
+    """
+    Sign a transaction with Privy (eth_signTransaction) and broadcast it
+    to the target chain RPC ourselves. This bypasses Privy's caip2 chain
+    support requirement.
+    """
+    # 1. Fetch nonce from target chain
+    nonce = _rpc_call(rpc_url, "eth_getTransactionCount", [sender_address, "latest"])
+
+    # 2. Fetch gas price from target chain
+    gas_price = _rpc_call(rpc_url, "eth_gasPrice", [])
+
+    # 3. Build full transaction params for signing
+    tx_params = {
+        "to": to,
+        "value": value,
+        "data": data,
+        "chain_id": chain_id,
+        "nonce": nonce,
+        "gas_limit": gas_limit,
+        "gas_price": gas_price,
+        "type": 0,  # Legacy transaction
+    }
+
+    logger.info(f"[SIGN_BROADCAST] Signing tx: wallet={wallet_id}, chain_id={chain_id}, to={to}, value={value}, nonce={nonce}, gas_price={gas_price}")
+
+    # 4. Sign with Privy (no caip2 needed!)
+    sign_result = client.wallets.rpc(
+        wallet_id=wallet_id,
+        method="eth_signTransaction",
+        params={"transaction": tx_params},
+    )
+
+    signed_tx = sign_result.data.signed_transaction
+    logger.info(f"[SIGN_BROADCAST] Got signed tx (encoding={sign_result.data.encoding})")
+
+    # 5. Broadcast to target chain RPC
+    tx_hash = _rpc_call(rpc_url, "eth_sendRawTransaction", [signed_tx])
+    logger.info(f"[SIGN_BROADCAST] Broadcasted! tx_hash={tx_hash}")
+
+    return {"hash": tx_hash, "chain_id": chain_id}
+
 
 #### SWAP HELPER FUNCTIONS ####
 
-def build_egas_swap_calldata():
-    # TODO: Implement calldata builder for EGAS router on ENI
-    pass
+def build_egas_swap_calldata(token_in: str, token_out: str, amount: str) -> str:
+    """
+    Build calldata for EGAS Swap router: exchange(address tokenIn, address tokenOut, uint256 amount)
+
+    Function selector: 0x969e3756
+
+    Args:
+        token_in:  Token address to sell (use 0x0000...0000 for native EGAS)
+        token_out: Token address to buy
+        amount:    Amount in wei as a decimal string (e.g. "1000000000000000000" for 1 EGAS)
+
+    Returns:
+        Hex-encoded calldata string starting with "0x"
+    """
+    # Function selector for exchange(address,address,uint256)
+    selector = "969e3756"
+
+    # Pad addresses to 32 bytes (remove "0x" prefix, lowercase, zero-fill to 64 hex chars)
+    token_in_padded = token_in[2:].lower().zfill(64)
+    token_out_padded = token_out[2:].lower().zfill(64)
+
+    # Pad uint256 amount to 32 bytes
+    amount_padded = hex(int(amount))[2:].zfill(64)
+
+    return f"0x{selector}{token_in_padded}{token_out_padded}{amount_padded}"
 
 
 def _get_0x_quote(config: dict, token_in: str, token_out: str, amount: str, taker_address: str) -> dict:
@@ -272,16 +405,63 @@ def _swap_via_router(
     token_in,
     token_out,
     amount,
+    sender_address,
 ):
-    """Build calldata for EGAS Swap router on ENI."""
+    """Build calldata for EGAS Swap router on ENI, sign with Privy, broadcast ourselves."""
     calldata = build_egas_swap_calldata(token_in, token_out, amount)
 
-    return _privy_send_tx(
+    # If swapping native token (EGAS), send value = amount with the tx
+    NATIVE_ZERO = "0x0000000000000000000000000000000000000000"
+    NATIVE_PLACEHOLDER = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+    is_native = token_in.lower() in (NATIVE_ZERO.lower(), NATIVE_PLACEHOLDER.lower())
+    value = hex(int(amount)) if is_native else "0x0"
+
+    logger.info(f"[SWAP_ROUTER] wallet_id={wallet_id}, token_in={token_in}, token_out={token_out}, amount={amount}, value={value}, is_native={is_native}")
+
+    result = {}
+
+    # If tokenIn is ERC20 (not native), approve the router to spend it first
+    if not is_native:
+        approve_data = _encode_erc20_approve(config["swap_router"], int(amount))
+        logger.info(f"[SWAP_ROUTER] Sending ERC20 approve: token={token_in}, spender={config['swap_router']}, amount={amount}")
+
+        approval_tx = _privy_sign_and_broadcast(
+            wallet_id=wallet_id,
+            rpc_url=config["rpc"],
+            chain_id=config["chain_id"],
+            sender_address=sender_address,
+            to=token_in,  # approve on the token contract
+            data=approve_data,
+            value="0x0",
+        )
+        result["approval_tx"] = approval_tx
+        logger.info(f"[SWAP_ROUTER] Approval tx sent: {approval_tx}")
+
+        # Wait for approval tx to be confirmed before sending swap tx
+        logger.info(f"[SWAP_ROUTER] Waiting for approval tx to be confirmed...")
+        _wait_for_tx_receipt(config["rpc"], approval_tx["hash"])
+
+    # Execute the swap
+    swap_tx = _privy_sign_and_broadcast(
         wallet_id=wallet_id,
-        caip2=config["caip2"],
+        rpc_url=config["rpc"],
+        chain_id=config["chain_id"],
+        sender_address=sender_address,
         to=config["swap_router"],
         data=calldata,
+        value=value,
     )
+    result["swap_tx"] = swap_tx
+
+    # Wait for swap tx confirmation and check status
+    try:
+        logger.info(f"[SWAP_ROUTER] Waiting for swap tx to be confirmed...")
+        receipt = _wait_for_tx_receipt(config["rpc"], swap_tx["hash"])
+        result["status"] = "✅ Swap confirmed successfully"
+    except RuntimeError as e:
+        result["status"] = f"❌ Swap failed on-chain: {e}"
+
+    return result
     
 @tool
 def review_swap(
@@ -400,40 +580,59 @@ def review_swap(
 
 @tool
 def swap_token(
-    wallet_address: str,
     chain: str,
     token_in: str,
     token_out: str,
     amount: str,
 ) -> dict:
-    """Swap tokens. Uses 0x on major chains, EGAS router on ENI."""
-    config = ensure_config()
-    wallet_id = config.get("configurable", {}).get("user_wallet_id")
-    if not wallet_id:
-        raise ValueError("Missing user_wallet_id in config")
+    """Swap tokens. Uses 0x on major chains, EGAS router on ENI.
 
-    chain_config = CHAINS_CONFIG[chain]
+    Args:
+        chain: Chain name (e.g. "eni-testnet", "ethereum", "arbitrum")
+        token_in: Symbol of the token to sell (e.g. "EGAS", "ENI-Peg USDT", "ETH", "USDC")
+        token_out: Symbol of the token to buy (e.g. "ENI-Peg USDT", "EGAS", "USDC", "ETH")
+        amount: Human-readable amount to swap (e.g. "1" for 1 token, "0.5" for 0.5 token)
 
-    token_in_addr = chain_config["tokens"][token_in]
-    token_out_addr = chain_config["tokens"][token_out]
+    Returns:
+        Transaction hash and details, or error message.
+    """
+    try:
+        config = ensure_config()
+        wallet_id = config.get("configurable", {}).get("user_wallet_id")
+        wallet_address = config.get("configurable", {}).get("user_wallet_address")
+        if not wallet_id:
+            return {"error": "❌ Missing user_wallet_id in config. Please ensure Wallet Agent is paired."}
 
-    if chain_config["swap_provider"] == "0x":
-        return _swap_via_0x(
-            wallet_id,
-            chain_config,
-            token_in_addr,
-            token_out_addr,
-            amount,
-            taker_address=wallet_address,
-        )
-    else:
-        return _swap_via_router(
-            wallet_id,
-            chain_config,
-            token_in_addr,
-            token_out_addr,
-            amount,
-        )
+        chain_config = CHAINS_CONFIG[chain]
+
+        token_in_addr = chain_config["tokens"][token_in]
+        token_out_addr = chain_config["tokens"][token_out]
+
+        # Convert human-readable amount to smallest unit (wei) using TOKEN_DECIMALS
+        decimals = TOKEN_DECIMALS.get(token_in, 18)
+        amount_wei = str(int(float(amount) * (10 ** decimals)))
+        logger.info(f"[SWAP] Converting amount: {amount} {token_in} ({decimals} decimals) -> {amount_wei} wei")
+
+        if chain_config["swap_provider"] == "0x":
+            return _swap_via_0x(
+                wallet_id,
+                chain_config,
+                token_in_addr,
+                token_out_addr,
+                amount_wei,
+                taker_address=wallet_address,
+            )
+        else:
+            return _swap_via_router(
+                wallet_id,
+                chain_config,
+                token_in_addr,
+                token_out_addr,
+                amount_wei,
+                sender_address=wallet_address,
+            )
+    except Exception as e:
+        return {"error": f"❌ Swap failed: {e}"}
 
 
 #### BRIDGE HELPER FUNCTIONS ####
@@ -480,11 +679,11 @@ def _get_orbiter_quote(
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as e:
-        raise ValueError(f"Orbiter API HTTP error: {e.response.status_code} - {e.response.text}") from e
+        return f"Orbiter API HTTP error: {e.response.status_code} - {e.response.text}"
     data = response.json()
     
     if data.get("status") != "success":
-        raise ValueError(f"Orbiter API error: {data.get('message', data)}")
+        return f"Orbiter API error: {data.get('message', data)}"
     
     return data.get("result", {})
 
@@ -496,10 +695,13 @@ def _bridge_via_orbiter(
     amount: str,
     user_address: str,
 ) -> dict:
-    """Get quote from Orbiter and execute bridge transaction."""
+    """Get quote from Orbiter and execute ALL steps (revoke, approve, bridge)."""
     
     source_token_addr = source_chain_config["tokens"][source_token_symbol]
     dest_token_addr = dest_chain_config["tokens"][source_token_symbol]
+
+    logger.info(f"[BRIDGE] Starting bridge: token={source_token_symbol}, amount={amount}, source_token={source_token_addr}, dest_token={dest_token_addr}")
+    logger.info(f"[BRIDGE] source_chain_id={source_chain_config['chain_id']}, dest_chain_id={dest_chain_config['chain_id']}")
     
     quote = _get_orbiter_quote(
         source_chain_id=source_chain_config["chain_id"],
@@ -510,27 +712,99 @@ def _bridge_via_orbiter(
         user_address=user_address,
     )
 
+    logger.info(f"[BRIDGE] Orbiter quote response type={type(quote).__name__}")
+
+    if isinstance(quote, str):
+        logger.error(f"[BRIDGE] Quote returned error string: {quote}")
+        return {"error": quote}
+
     if "steps" not in quote or len(quote["steps"]) == 0:
-        raise ValueError("Invalid quote response from Orbiter")
+        logger.error(f"[BRIDGE] No steps in quote: {quote}")
+        return {"error": "Invalid quote response from Orbiter"}
 
-    step = quote["steps"][0]
-    tx_data = step.get("tx", {})
-    
-    raw_value = tx_data.get("value")
-    if raw_value is None or raw_value == "":
-        hex_value = "0x0"
-    elif not str(raw_value).startswith("0x"):
-        hex_value = hex(int(raw_value))
+    steps = quote["steps"]
+    logger.info(f"[BRIDGE] Got {len(steps)} steps: {[s.get('action') for s in steps]}")
+
+    # Detect if source chain is ENI (needs sign-and-broadcast workaround)
+    is_eni_chain = source_chain_config.get("swap_provider") == "router"
+    result = {"steps_executed": []}
+
+    def _send_step_tx(step_tx_data, step_action):
+        """Send a single step's transaction."""
+        raw_value = step_tx_data.get("value")
+        if raw_value is None or raw_value == "":
+            hex_value = "0x0"
+        elif not str(raw_value).startswith("0x"):
+            hex_value = hex(int(raw_value))
+        else:
+            hex_value = raw_value
+
+        to_addr = step_tx_data.get("to")
+        data = step_tx_data.get("data")
+
+        logger.info(f"[BRIDGE] Sending step '{step_action}': to={to_addr}, value={hex_value}, data_len={len(data or '')}")
+
+        if is_eni_chain:
+            return _privy_sign_and_broadcast(
+                wallet_id=wallet_id,
+                rpc_url=source_chain_config["rpc"],
+                chain_id=source_chain_config["chain_id"],
+                sender_address=user_address,
+                to=to_addr,
+                data=data,
+                value=hex_value,
+            )
+        else:
+            return _privy_send_tx(
+                wallet_id=wallet_id,
+                caip2=source_chain_config["caip2"],
+                to=to_addr,
+                data=data,
+                value=hex_value,
+            )
+
+    # Execute each step in order
+    for i, step in enumerate(steps):
+        action = step.get("action", f"step_{i}")
+        tx_data = step.get("tx", {})
+
+        if not tx_data:
+            logger.warning(f"[BRIDGE] Step '{action}' has no tx data, skipping")
+            continue
+
+        logger.info(f"[BRIDGE] Executing step {i+1}/{len(steps)}: '{action}'")
+
+        try:
+            tx_result = _send_step_tx(tx_data, action)
+            logger.info(f"[BRIDGE] Step '{action}' tx result: {tx_result}")
+            result["steps_executed"].append({"action": action, "tx": tx_result})
+
+            # Wait for confirmation before next step (ALL chains — needed for USDT revoke/approve sequence)
+            tx_hash = tx_result.get("hash", "") if isinstance(tx_result, dict) else ""
+            if tx_hash:
+                rpc_url = source_chain_config["rpc"]
+                logger.info(f"[BRIDGE] Waiting for step '{action}' tx {tx_hash} to confirm...")
+                _wait_for_tx_receipt(rpc_url, tx_hash)
+                logger.info(f"[BRIDGE] Step '{action}' confirmed!")
+
+            # Track the bridge tx separately
+            if action == "bridge":
+                result["bridge_tx"] = tx_result
+
+        except RuntimeError as e:
+            logger.error(f"[BRIDGE] Step '{action}' failed: {e}")
+            result["status"] = f"❌ Step '{action}' failed: {e}"
+            return result
+
+    # Final status
+    if "bridge_tx" in result:
+        result["status"] = "✅ Bridge completed successfully"
+        logger.info(f"[BRIDGE] All steps completed successfully!")
     else:
-        hex_value = raw_value
+        result["status"] = "⚠️ No bridge step was found in the quote"
+        logger.warning(f"[BRIDGE] No bridge action found in steps")
 
-    return _privy_send_tx(
-        wallet_id=wallet_id,
-        caip2=source_chain_config["caip2"],
-        to=tx_data.get("to"),
-        data=tx_data.get("data"),
-        value=hex_value,
-    )
+    return result
 
 @tool
 def review_bridge(
@@ -644,48 +918,55 @@ def bridge_token(
     Bridge tokens from one chain to another using Orbiter Finance.
 
     Args:
-        wallet_address: User's wallet address
-        source_chain: Source chain name (e.g. "ethereum", "arbitrum", "base")
-        dest_chain: Destination chain name (e.g. "arbitrum", "base", "polygon")
-        token: Symbol of the token to bridge (e.g. "ETH", "USDC")
-        amount: Amount in the token's smallest unit (e.g. "1000000" for 1 USDC)
+        source_chain: Source chain name (e.g. "eni-testnet", "ethereum", "arbitrum", "base")
+        dest_chain: Destination chain name (e.g. "arbitrum", "base", "bnb")
+        token: Symbol of the token to bridge (e.g. "ETH", "USDC", "EGAS", "Orbiter USDT")
+        amount: Human-readable amount to bridge (e.g. "1" for 1 token, "0.5" for 0.5 token)
 
     Returns:
-        Transaction hash and details
+        Transaction hash and details, or error message.
     """
-    config = ensure_config()
-    wallet_address = config.get("configurable", {}).get("user_wallet_address")
-    wallet_id = config.get("configurable", {}).get("user_wallet_id")
-    if not wallet_id or not wallet_address:
-        raise ValueError("Missing user_wallet_id in config")
+    try:
+        config = ensure_config()
+        wallet_address = config.get("configurable", {}).get("user_wallet_address")
+        wallet_id = config.get("configurable", {}).get("user_wallet_id")
+        if not wallet_id or not wallet_address:
+            return {"error": "❌ Missing wallet config. Please ensure Wallet Agent is paired."}
 
-    # Validate chains
-    if source_chain not in CHAINS_CONFIG or dest_chain not in CHAINS_CONFIG:
-        raise ValueError(f"Invalid chain. Supported: {', '.join(CHAINS_CONFIG)}")
+        # Validate chains
+        if source_chain not in CHAINS_CONFIG or dest_chain not in CHAINS_CONFIG:
+            return {"error": f"❌ Invalid chain. Supported: {', '.join(CHAINS_CONFIG)}"}
 
-    source_config = CHAINS_CONFIG[source_chain]
-    dest_config = CHAINS_CONFIG[dest_chain]
+        source_config = CHAINS_CONFIG[source_chain]
+        dest_config = CHAINS_CONFIG[dest_chain]
 
-    if token not in source_config["tokens"]:
-        raise ValueError(f"Token {token} not supported on {source_chain}")
-    
-    if token not in dest_config["tokens"]:
-        raise ValueError(f"Token {token} not supported on {dest_chain}")
+        if token not in source_config["tokens"]:
+            return {"error": f"❌ Token {token} not supported on {source_chain}"}
+        
+        if token not in dest_config["tokens"]:
+            return {"error": f"❌ Token {token} not supported on {dest_chain}"}
 
-    if not source_config.get("bridge", {}).get("orbiter"):
-        raise ValueError(f"Orbiter bridge not available on {source_chain}")
+        if not source_config.get("bridge", {}).get("orbiter"):
+            return {"error": f"❌ Orbiter bridge not available on {source_chain}"}
 
-    if dest_chain not in source_config["bridge"].get("targets", []):
-        raise ValueError(f"Cannot bridge from {source_chain} to {dest_chain}")
+        if dest_chain not in source_config["bridge"].get("targets", []):
+            return {"error": f"❌ Cannot bridge from {source_chain} to {dest_chain}"}
 
-    return _bridge_via_orbiter(
-        wallet_id=wallet_id,
-        source_chain_config=source_config,
-        dest_chain_config=dest_config,
-        source_token_symbol=token,
-        amount=amount,
-        user_address=wallet_address,
-    )
+        # Convert human-readable amount to smallest unit (wei) using TOKEN_DECIMALS
+        decimals = TOKEN_DECIMALS.get(token, 18)
+        amount_wei = str(int(float(amount) * (10 ** decimals)))
+        logger.info(f"[BRIDGE] Converting amount: {amount} {token} ({decimals} decimals) -> {amount_wei} wei")
+
+        return _bridge_via_orbiter(
+            wallet_id=wallet_id,
+            source_chain_config=source_config,
+            dest_chain_config=dest_config,
+            source_token_symbol=token,
+            amount=amount_wei,
+            user_address=wallet_address,
+        )
+    except Exception as e:
+        return {"error": f"❌ Bridge failed: {e}"}
     
 tools = [
     review_swap,
