@@ -18,6 +18,7 @@ RUN apt-get update \
         graphviz \
         libgraphviz-dev \
         pkg-config \
+        git \
     && rm -rf /var/lib/apt/lists/* \
     && curl -LsSf https://astral.sh/uv/install.sh | sh
 

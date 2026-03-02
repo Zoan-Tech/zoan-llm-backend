@@ -73,7 +73,7 @@ class AgentWorkflow(_message.Message):
     def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., steps: _Optional[_Iterable[_Union[StepModule, _Mapping]]] = ...) -> None: ...
 
 class AgentConfig(_message.Message):
-    __slots__ = ("id", "name", "model", "model_kwargs", "description", "instruction", "system_prompt", "is_enabled", "is_primary", "workflows", "stream_usage")
+    __slots__ = ("id", "name", "model", "model_kwargs", "description", "instruction", "system_prompt", "is_enabled", "is_primary", "workflows", "stream_usage", "type", "agent_kya")
     ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     MODEL_FIELD_NUMBER: _ClassVar[int]
@@ -85,6 +85,8 @@ class AgentConfig(_message.Message):
     IS_PRIMARY_FIELD_NUMBER: _ClassVar[int]
     WORKFLOWS_FIELD_NUMBER: _ClassVar[int]
     STREAM_USAGE_FIELD_NUMBER: _ClassVar[int]
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    AGENT_KYA_FIELD_NUMBER: _ClassVar[int]
     id: str
     name: str
     model: str
@@ -96,37 +98,47 @@ class AgentConfig(_message.Message):
     is_primary: bool
     workflows: _containers.RepeatedCompositeFieldContainer[AgentWorkflow]
     stream_usage: bool
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., model: _Optional[str] = ..., model_kwargs: _Optional[_Union[ModelKwargs, _Mapping]] = ..., description: _Optional[str] = ..., instruction: _Optional[str] = ..., system_prompt: _Optional[str] = ..., is_enabled: bool = ..., is_primary: bool = ..., workflows: _Optional[_Iterable[_Union[AgentWorkflow, _Mapping]]] = ..., stream_usage: bool = ...) -> None: ...
+    type: str
+    agent_kya: str
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., model: _Optional[str] = ..., model_kwargs: _Optional[_Union[ModelKwargs, _Mapping]] = ..., description: _Optional[str] = ..., instruction: _Optional[str] = ..., system_prompt: _Optional[str] = ..., is_enabled: bool = ..., is_primary: bool = ..., workflows: _Optional[_Iterable[_Union[AgentWorkflow, _Mapping]]] = ..., stream_usage: bool = ..., type: _Optional[str] = ..., agent_kya: _Optional[str] = ...) -> None: ...
 
 class Attachment(_message.Message):
-    __slots__ = ("url", "mime_type")
+    __slots__ = ("url", "mime_type", "file_name", "file_size", "type")
     URL_FIELD_NUMBER: _ClassVar[int]
     MIME_TYPE_FIELD_NUMBER: _ClassVar[int]
+    FILE_NAME_FIELD_NUMBER: _ClassVar[int]
+    FILE_SIZE_FIELD_NUMBER: _ClassVar[int]
+    TYPE_FIELD_NUMBER: _ClassVar[int]
     url: str
     mime_type: str
-    def __init__(self, url: _Optional[str] = ..., mime_type: _Optional[str] = ...) -> None: ...
+    file_name: str
+    file_size: str
+    type: str
+    def __init__(self, url: _Optional[str] = ..., mime_type: _Optional[str] = ..., file_name: _Optional[str] = ..., file_size: _Optional[str] = ..., type: _Optional[str] = ...) -> None: ...
 
 class Metadata(_message.Message):
-    __slots__ = ("console_logs",)
+    __slots__ = ("console_logs", "attachments", "web_search")
     CONSOLE_LOGS_FIELD_NUMBER: _ClassVar[int]
+    ATTACHMENTS_FIELD_NUMBER: _ClassVar[int]
+    WEB_SEARCH_FIELD_NUMBER: _ClassVar[int]
     console_logs: str
-    def __init__(self, console_logs: _Optional[str] = ...) -> None: ...
+    attachments: _containers.RepeatedCompositeFieldContainer[Attachment]
+    web_search: bool
+    def __init__(self, console_logs: _Optional[str] = ..., attachments: _Optional[_Iterable[_Union[Attachment, _Mapping]]] = ..., web_search: bool = ...) -> None: ...
 
 class CompletionRequest(_message.Message):
-    __slots__ = ("user_id", "conversation_id", "message", "attachments", "agents", "metadata")
+    __slots__ = ("user_id", "conversation_id", "message", "agents", "metadata")
     USER_ID_FIELD_NUMBER: _ClassVar[int]
     CONVERSATION_ID_FIELD_NUMBER: _ClassVar[int]
     MESSAGE_FIELD_NUMBER: _ClassVar[int]
-    ATTACHMENTS_FIELD_NUMBER: _ClassVar[int]
     AGENTS_FIELD_NUMBER: _ClassVar[int]
     METADATA_FIELD_NUMBER: _ClassVar[int]
     user_id: str
     conversation_id: str
     message: str
-    attachments: _containers.RepeatedCompositeFieldContainer[Attachment]
     agents: _containers.RepeatedCompositeFieldContainer[AgentConfig]
     metadata: Metadata
-    def __init__(self, user_id: _Optional[str] = ..., conversation_id: _Optional[str] = ..., message: _Optional[str] = ..., attachments: _Optional[_Iterable[_Union[Attachment, _Mapping]]] = ..., agents: _Optional[_Iterable[_Union[AgentConfig, _Mapping]]] = ..., metadata: _Optional[_Union[Metadata, _Mapping]] = ...) -> None: ...
+    def __init__(self, user_id: _Optional[str] = ..., conversation_id: _Optional[str] = ..., message: _Optional[str] = ..., agents: _Optional[_Iterable[_Union[AgentConfig, _Mapping]]] = ..., metadata: _Optional[_Union[Metadata, _Mapping]] = ...) -> None: ...
 
 class ChunkContent(_message.Message):
     __slots__ = ("type", "value", "agent", "index", "metadata")

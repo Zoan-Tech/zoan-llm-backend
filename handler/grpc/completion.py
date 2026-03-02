@@ -3,7 +3,7 @@ import asyncio
 from handler.grpc.grpc_generated.completion import completion_pb2_grpc, completion_pb2
 from config.logging import get_logger, setup_logging
 from model.completion import CompletionRequest
-from action.completion import grpc_completion_action
+from action.completion import swarm_completion
 
 setup_logging()
 logger = get_logger()
@@ -41,12 +41,6 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                 user_id=request.user_id,
                 conversation_id=request.conversation_id,
                 message=request.message,
-                attachments=[
-                    {
-                        "url": att.url,
-                        "mime_type": att.mime_type
-                    } for att in request.attachments
-                ] if request.attachments else [],
                 agents=[
                     {
                         "id": agent.id,
@@ -87,26 +81,37 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                                 ]
                             } for workflow in agent.workflows
                         ],
-                        "stream_usage": agent.stream_usage
+                        "stream_usage": agent.stream_usage,
+                        "type": agent.type,
+                        "agent_kya": agent.agent_kya,
                     } for agent in request.agents
                 ],
                 metadata={
-                    "console_logs": request.metadata.console_logs
+                    "console_logs": request.metadata.console_logs,
+                    "attachments": [
+                        {
+                            "url": att.url,
+                            "file_name": att.file_name,
+                            "mime_type": att.mime_type,
+                            "file_size": att.file_size,
+                            "type": att.type
+                        } for att in request.metadata.attachments
+                    ] if request.metadata.attachments else [],
+                    "web_search": request.metadata.web_search
                 }
             )
             
             logger.debug(f"Received completion request: {completion_object.model_dump()}")
-            
-            # Process completion and stream responses using asyncio.run
             async def async_generator():
-                async for chunk in grpc_completion_action.create_completion_stream(
+                async for chunk in swarm_completion.create_graph_completion_stream(
                     user_id=completion_object.user_id,
                     conversation_id=completion_object.conversation_id,
                     message=completion_object.message,
                     agents=completion_object.agents,
-                    attachments=completion_object.attachments,
+                    attachments=completion_object.metadata.attachments,
                     metadata=completion_object.metadata,
                     auth_token=auth_token,
+                    web_search=completion_object.metadata.web_search,
                 ):
                     yield chunk
             
@@ -128,7 +133,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                     except Exception as inner_error:
                         logger.error(f"Error processing chunk: {str(inner_error)}", exc_info=True)
                         # Reuse base.py method and convert to protobuf
-                        error_chunk = grpc_completion_action._create_error_chunk(str(inner_error))
+                        error_chunk = swarm_completion._create_error_chunk(str(inner_error))
                         yield _convert_to_protobuf(error_chunk)
                         break
             finally:
@@ -136,7 +141,7 @@ class CompletionServiceServicer(completion_pb2_grpc.CompletionServiceServicer):
                 loop.close()
                 
         except Exception as outer_error:
-            logger.error(f"Error handling completion message: {str(outer_error)} for chat {request.conversation_id}")
+            logger.error(f"Error handling completion message: {str(outer_error)} for chat {request}")
             # Reuse base.py method and convert to protobuf
-            error_chunk = grpc_completion_action._create_error_chunk(str(outer_error))
+            error_chunk = swarm_completion._create_error_chunk(str(outer_error))
             yield _convert_to_protobuf(error_chunk)

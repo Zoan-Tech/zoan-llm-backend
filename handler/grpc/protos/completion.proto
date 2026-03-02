@@ -54,17 +54,25 @@ message AgentConfig {
   repeated AgentWorkflow workflows = 10;
 
   bool stream_usage = 11;
+
+  string type = 12;
+  string agent_kya = 13;
 }
 
 // ============ Attachment ============
 message Attachment {
   string url = 1;
   string mime_type = 2;
+  optional string file_name = 3;
+  optional string file_size = 4;
+  optional string type = 5;
 }
 
 // ============ Metadata ============
 message Metadata {
   string console_logs = 1;
+  repeated Attachment attachments = 2;
+  bool web_search = 3;
 }
 
 // ============ CompletionRequest ============
@@ -72,9 +80,8 @@ message CompletionRequest {
   string user_id = 1;
   string conversation_id = 2;
   string message = 3;
-  repeated Attachment attachments = 4;
-  repeated AgentConfig agents = 5;
-  Metadata metadata = 6;
+  repeated AgentConfig agents = 4;
+  Metadata metadata = 5;
 }
 
 // ============ ChunkContent ============
