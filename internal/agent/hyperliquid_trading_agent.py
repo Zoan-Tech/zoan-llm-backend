@@ -9,6 +9,7 @@ from internal.agent.base import BaseInternalAgent
 from internal.agent.tools.hyperliquid_trading_agent import tools
 from internal.agent.middleware.base import get_base_middleware
 from model.completion import AgentConfig
+from config.prompt.kya_instruction import KYA_INSTRUCTIONS
 
 logger = get_logger()
 
@@ -68,7 +69,11 @@ class HyperliquidTradingAgent(BaseInternalAgent):
         
         toolset = self.get_toolset()
         
-        system_prompt = self.get_prompt()
+        kya_instruction = KYA_INSTRUCTIONS.get("not_paired") if not agent_config.agent_kya else ""
+        
+        system_prompt = self.get_prompt(
+            kya_instruction=kya_instruction
+        )
         
         middleware = self.get_middleware()
         
